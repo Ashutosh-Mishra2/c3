@@ -3,8 +3,7 @@ import time
 import os
 import tempfile
 import numpy as np
-from tensorflow.python.framework import ops
-from typing import Tuple
+from typing import List, Tuple
 import warnings
 
 
@@ -128,21 +127,6 @@ def ask_yn() -> bool:
     return boolean
 
 
-def jsonify_list(data):
-    if isinstance(data, dict):
-        return {str(k): jsonify_list(v) for k, v in data.items()}
-    elif isinstance(data, list):
-        return [jsonify_list(v) for v in data]
-    elif isinstance(data, tuple):
-        return tuple(jsonify_list(v) for v in data)
-    elif isinstance(data, np.ndarray):
-        return data.tolist()
-    elif isinstance(data, ops.EagerTensor):
-        return data.numpy().tolist()
-    else:
-        return data
-
-
 def deprecated(message: str):
     """Decorator for deprecating functions
 
@@ -174,3 +158,34 @@ def deprecated(message: str):
         return deprecated_func
 
     return deprecated_decorator
+
+
+def flatten(lis: List, ltypes=(list, tuple)) -> List:
+    """Flatten lists of arbitrary lengths
+    https://rightfootin.blogspot.com/2006/09/more-on-python-flatten.html
+
+    Parameters
+    ----------
+    lis : List
+        The iterable to flatten
+    ltypes : tuple, optional
+        Possibly the datatype of the iterable, by default (list, tuple)
+
+    Returns
+    -------
+    List
+        Flattened list
+    """
+    ltype = type(lis)
+    lis = list(lis)
+    i = 0
+    while i < len(lis):
+        while isinstance(lis[i], ltypes):
+            if not lis[i]:
+                lis.pop(i)
+                i -= 1
+                break
+            else:
+                lis[i : i + 1] = lis[i]
+        i += 1
+    return ltype(lis)
