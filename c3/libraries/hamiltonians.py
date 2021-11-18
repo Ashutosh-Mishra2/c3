@@ -123,6 +123,29 @@ def int_YY(anhs):
 
 
 @hamiltonian_reg_deco
+def jaynes_cummings(anhs):
+    """
+    Jaynes-Cummings coupling.
+
+    Parameters
+    ----------
+    anhs : Tensor list
+        Annihilators.
+
+    Returns
+    -------
+    Tensor
+        coupling
+
+    """
+    a = anhs[0]
+    b = anhs[1]
+    a_dag = a.T.conj()
+    b_dag = b.T.conj()
+    return np.matmul(a, b_dag) + np.matmul(a_dag, b)
+
+
+@hamiltonian_reg_deco
 def x_drive(a):
     """
     Semiclassical drive.
