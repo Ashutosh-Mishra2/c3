@@ -268,8 +268,9 @@ def flattop(t, params):
     t_up = tf.cast(params["t_up"].get_value(), tf.float64)
     t_down = tf.cast(params["t_down"].get_value(), tf.float64)
     risefall = tf.cast(params["risefall"].get_value(), tf.float64)
+    amp = tf.cast(params["amp"].get_value(), tf.float64)
 
-    shape = (
+    shape = amp * (
         (1 + tf.math.erf((t - t_up) / risefall))
         / 2
         * (1 + tf.math.erf((-t + t_down) / risefall))
