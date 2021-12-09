@@ -288,6 +288,63 @@ class Resonator(PhysicalComponent):
 
 
 @dev_reg_deco
+class ReadoutResonator(PhysicalComponent):
+    """
+    Represents the element in a chip functioning as readout-resonator.
+
+    Parameters
+    ----------
+    freq: np.float64
+        frequency of the resonator
+
+    """
+
+    def init_Hs(self, ann_oper):
+        """
+        Initialize the Hamiltonian as a number operator
+
+        Parameters
+        ----------
+        ann_oper : np.array
+            Annihilation operator in the full Hilbert space.
+
+        """
+        self.Hs["freq"] = tf.constant(
+            hamiltonians["resonator"](ann_oper), dtype=tf.complex128
+        )
+        self.Hs["a"] = tf.constant(ann_oper, dtype=tf.complex128)
+        self.Hs["a_dag"] = tf.constant(ann_oper.T.conj(), dtype=tf.complex128)
+
+    def init_Ls(self, ann_oper):
+        """NOT IMPLEMENTED"""
+        pass
+
+    def get_Hamiltonian(
+        self, signal: Union[dict, bool] = None, transform: tf.Tensor = None
+    ):
+        """Compute the Hamiltonian."""
+        if signal:
+            freq = tf.cast(self.params["freq"].get_value(), tf.complex128)
+            Hs = self.get_transformed_hamiltonians(transform)
+            if signal is True:
+                print("Specify signal values")
+            elif isinstance(signal, dict):
+                values = tf.cast(signal["values"], tf.complex128)
+                h = []
+                for i in values:
+                    h.append(freq * Hs["freq"] + Hs["a"] * i + Hs["a_dag"] * np.conj(i))
+                return h
+
+        Hs = self.get_transformed_hamiltonians(transform)
+        freq = tf.cast(self.params["freq"].get_value(), tf.complex128)
+        return freq * Hs["freq"]
+
+    def get_Lindbladian(self, dims):
+        """NOT IMPLEMENTED"""
+        pass
+
+
+@dev_reg_deco
 class Transmon(PhysicalComponent):
     """
     Represents the element in a chip functioning as tunanble transmon qubit.
