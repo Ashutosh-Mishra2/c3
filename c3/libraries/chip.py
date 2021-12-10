@@ -333,7 +333,7 @@ class ReadoutResonator(PhysicalComponent):
                 h = []
                 for i in values:
                     h.append(freq * Hs["freq"] + Hs["a"] * i + Hs["a_dag"] * np.conj(i))
-                return h
+                return np.array(h)
 
         Hs = self.get_transformed_hamiltonians(transform)
         freq = tf.cast(self.params["freq"].get_value(), tf.complex128)
