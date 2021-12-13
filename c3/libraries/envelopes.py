@@ -613,6 +613,6 @@ def flattop_rwa(t, params):
         / 2
         * (1 + tf.math.erf((-t + t_down) / risefall))
         / 2
-        * np.exp(1j * freq * t)
+        * tf.math.exp(1j * freq * t)
     )
     return shape
