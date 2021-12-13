@@ -613,7 +613,7 @@ def flattop_rwa(t, params):
         / 2
         * (1 + tf.math.erf((-t + t_down) / risefall))
         / 2
-        * tf.math.exp(1j * freq * t)
+        * tf.exp(1j * freq * t)
     )
     return shape
 
@@ -636,7 +636,6 @@ def gaussian_nonorm_rwa(t, params):
     t_final = tf.cast(params["t_final"].get_value(), tf.complex128)
     sigma = tf.cast(params["sigma"].get_value(), tf.complex128)
     freq = tf.cast(params["frequency"].get_value(), tf.complex128)
-    gauss = tf.exp(-((t - t_final / 2) ** 2) / (2 * sigma ** 2)) * tf.math.exp(
-        1j * freq * t
-    )
+    t = tf.cast(t, dtype=tf.complex128)
+    gauss = tf.exp(-((t - t_final / 2) ** 2) / (2 * sigma ** 2)) * tf.exp(1j * freq * t)
     return gauss

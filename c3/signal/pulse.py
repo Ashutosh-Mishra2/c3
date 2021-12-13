@@ -106,7 +106,7 @@ class Envelope(C3obj):
             vals = self.shape(ts, self.params) - offset
             mask = tf.cast(ts < t_final.numpy() - t_before, vals.dtype)
         else:
-            vals = self.shape(ts, self.params)
+            vals = tf.cast(self.shape(ts, self.params), dtype=tf.complex128)
             mask = tf.cast(ts < t_final.numpy(), vals.dtype)
         # With the offset, we make sure the signal starts with amplitude 0.
         return vals * mask

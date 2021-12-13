@@ -332,15 +332,19 @@ class Instruction:
                     delta = comp.params["delta"].get_value()
                     with tf.GradientTape() as t:
                         t.watch(comp_ts)
-                        env = comp.get_shape_values(ts=comp_ts, t_before=t_before)
+                        env = tf.cast(
+                            comp.get_shape_values(ts=comp_ts, t_before=t_before),
+                            dtype=tf.complex128,
+                        )
                     denv = t.gradient(
                         env, comp_ts, unconnected_gradients=tf.UnconnectedGradients.ZERO
                     )  # Derivative W.R.T. to bins
                     if not opts.pop("drag", False):
                         # Use drag_2 definition here
                         denv = denv * dt  # derivative W.R.T. to time
-
-                    env = tf.complex(env, -denv * delta)
+                    env = env * tf.exp(
+                        1j * tf.cast(-denv * delta, dtype=tf.complex128)
+                    )  # tf.complex(env, -denv * delta)
                 elif "pwc" in options and options["pwc"]:
                     inphase = comp.params["inphase"].get_value()
                     quadrature = comp.params["quadrature"].get_value()
