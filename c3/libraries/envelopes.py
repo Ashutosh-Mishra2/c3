@@ -616,3 +616,27 @@ def flattop_rwa(t, params):
         * tf.math.exp(1j * freq * t)
     )
     return shape
+
+
+@env_reg_deco
+def gaussian_nonorm_rwa(t, params):
+    """
+    Non-normalized gaussian in the rotating wave approximation. Maximum value is 1, area is given by length.
+
+    Parameters
+    ----------
+    params : dict
+        t_final : float
+            Total length of the Gaussian.
+        sigma: float
+            Width of the Gaussian.
+
+    """
+    # TODO Add zeroes for t>t_final
+    t_final = tf.cast(params["t_final"].get_value(), tf.float64)
+    sigma = params["sigma"].get_value()
+    freq = tf.cast(params["frequency"].get_value(), tf.float64)
+    gauss = tf.exp(-((t - t_final / 2) ** 2) / (2 * sigma ** 2)) * tf.math.exp(
+        1j * freq * t
+    )
+    return gauss
