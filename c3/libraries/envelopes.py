@@ -603,10 +603,10 @@ def flattop_rwa(t, params):
             Frequency of drive.
 
     """
-    t_up = tf.cast(params["t_up"].get_value(), tf.float64)
-    t_down = tf.cast(params["t_down"].get_value(), tf.float64)
-    risefall = tf.cast(params["risefall"].get_value(), tf.float64)
-    freq = tf.cast(params["frequency"].get_value(), tf.float64)
+    t_up = tf.cast(params["t_up"].get_value(), tf.complex128)
+    t_down = tf.cast(params["t_down"].get_value(), tf.complex128)
+    risefall = tf.cast(params["risefall"].get_value(), tf.complex128)
+    freq = tf.cast(params["frequency"].get_value(), tf.complex128)
 
     shape = (
         (1 + tf.math.erf((t - t_up) / risefall))
@@ -633,9 +633,9 @@ def gaussian_nonorm_rwa(t, params):
 
     """
     # TODO Add zeroes for t>t_final
-    t_final = tf.cast(params["t_final"].get_value(), tf.float64)
-    sigma = params["sigma"].get_value()
-    freq = tf.cast(params["frequency"].get_value(), tf.float64)
+    t_final = tf.cast(params["t_final"].get_value(), tf.complex128)
+    sigma = tf.cast(params["sigma"].get_value(), tf.complex128)
+    freq = tf.cast(params["frequency"].get_value(), tf.complex128)
     gauss = tf.exp(-((t - t_final / 2) ** 2) / (2 * sigma ** 2)) * tf.math.exp(
         1j * freq * t
     )
