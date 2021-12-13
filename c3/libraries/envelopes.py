@@ -584,3 +584,35 @@ def flattop_variant(t, params):
         else:
             value[i] = 0
     return value
+
+
+@env_reg_deco
+def flattop_rwa(t, params):
+    """Flattop gaussian with width of length risefall, modelled by error functions, in the rotating wave approximation"
+
+    Parameters
+    ----------
+    params : dict
+        t_up : float
+            Center of the ramp up.
+        t_down : float
+            Center of the ramp down.
+        risefall : float
+            Length of the ramps.
+        frequency : float
+            Frequency of drive.
+
+    """
+    t_up = tf.cast(params["t_up"].get_value(), tf.float64)
+    t_down = tf.cast(params["t_down"].get_value(), tf.float64)
+    risefall = tf.cast(params["risefall"].get_value(), tf.float64)
+    freq = tf.cast(params["frequency"].get_value(), tf.float64)
+
+    shape = (
+        (1 + tf.math.erf((t - t_up) / risefall))
+        / 2
+        * (1 + tf.math.erf((-t + t_down) / risefall))
+        / 2
+        * np.exp(1j * freq * t)
+    )
+    return shape
