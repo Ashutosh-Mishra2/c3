@@ -413,7 +413,10 @@ class Transmon(PhysicalComponent):
             sig = signal["values"]
             freq = tf.cast(self.get_freq(sig), tf.complex128)
             freq = tf.reshape(freq, [freq.shape[0], 1, 1])
-            tf.expand_dims(H_freq, 0) * freq
+            h = tf.expand_dims(H_freq, 0) * freq
+            if self.hilbert_dim > 2:
+                h += self.get_anhar() * Hs["anhar"]
+            return h
         else:
             freq = self.get_freq()
 
