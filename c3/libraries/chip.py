@@ -313,7 +313,7 @@ class ReadoutResonator(PhysicalComponent):
             hamiltonians["resonator"](ann_oper), dtype=tf.complex128
         )
         self.Hs["a"] = tf.constant(ann_oper, dtype=tf.complex128)
-        self.Hs["a_dag"] = tf.constant(ann_oper.T.conj(), dtype=tf.complex128)
+        self.Hs["a_dag"] = tf.transpose(self.Hs["a"], conjugate=True)
 
     def init_Ls(self, ann_oper):
         """NOT IMPLEMENTED"""
@@ -330,14 +330,22 @@ class ReadoutResonator(PhysicalComponent):
                 print("Specify signal values")
             elif isinstance(signal, dict):
                 values = tf.cast(signal["values"], tf.complex128)
+                ts = tf.cast(signal["ts"], dtype=tf.complex128)
                 h = []
-                for i in values:
-                    h.append(freq * Hs["freq"] + Hs["a"] * i + Hs["a_dag"] * np.conj(i))
+                for i, sig in enumerate(values):
+                    h.append(
+                        freq * Hs["freq"]
+                        + sig
+                        * (
+                            Hs["a"] * tf.exp(1j * freq * ts[i])
+                            + Hs["a_dag"] * tf.exp(-1j * freq * ts[i])
+                        )
+                    )
                 return np.array(h)
-
-        Hs = self.get_transformed_hamiltonians(transform)
-        freq = tf.cast(self.params["freq"].get_value(), tf.complex128)
-        return freq * Hs["freq"]
+        else:
+            Hs = self.get_transformed_hamiltonians(transform)
+            freq = tf.cast(self.params["freq"].get_value(), tf.complex128)
+            return freq * Hs["freq"]
 
     def get_Lindbladian(self, dims):
         """NOT IMPLEMENTED"""
