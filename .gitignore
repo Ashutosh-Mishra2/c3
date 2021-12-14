@@ -140,3 +140,4 @@ dmypy.json
 .stignore
 okteto.yml
 c3_reset/
+c3_DAQC/
