@@ -355,6 +355,7 @@ class Transmon(PhysicalComponent):
     def get_factor(self, phi_sig=0):
         pi = tf.constant(np.pi, tf.float64)
         phi = self.params["phi"].get_value()
+        tf.print(phi_sig, summarize=-1)
         phi += phi_sig
         phi_0 = self.params["phi_0"].get_value()
         if "d" in self.params:
