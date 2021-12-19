@@ -379,8 +379,10 @@ class Transmon(PhysicalComponent):
     def get_freq(self, phi_sig=0):
         # TODO: Check how the time dependency affects the frequency. (Koch et al. , 2007)
         freq = self.params["freq"].get_value()
-        anhar = self.params["anhar"].get_value()
-        biased_freq = (freq - anhar) * self.get_factor(phi_sig) + anhar
+        # anhar = self.params["anhar"].get_value()
+        biased_freq = freq * self.get_factor(
+            phi_sig
+        )  # (freq - anhar) * self.get_factor(phi_sig) + anhar
         return tf.cast(biased_freq, tf.complex128)
 
     def init_Hs(self, ann_oper):
@@ -412,7 +414,6 @@ class Transmon(PhysicalComponent):
 
         if isinstance(signal, dict):
             sig = signal["values"]
-            print(sig)
             freq = tf.cast(self.get_freq(sig), tf.complex128)
             freq = tf.reshape(freq, [freq.shape[0], 1, 1])
             h = tf.expand_dims(H_freq, 0) * freq
