@@ -413,7 +413,9 @@ class Transmon(PhysicalComponent):
         H_freq = Hs["freq"]
 
         if isinstance(signal, dict):
-            sig = signal["values"]
+            sig_inphase_sq = tf.math.square(signal["inphase"])
+            sig_quad_sq = tf.math.square(signal["quadrature"])
+            sig = tf.sqrt(tf.sqrt(tf.math.add(sig_inphase_sq, sig_quad_sq)))
             freq = tf.cast(self.get_freq(sig), tf.complex128)
             freq = tf.reshape(freq, [freq.shape[0], 1, 1])
             h = tf.expand_dims(H_freq, 0) * freq
