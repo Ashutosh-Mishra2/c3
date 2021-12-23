@@ -330,6 +330,7 @@ class ReadoutResonator(PhysicalComponent):
                 print("Specify signal values")
             elif isinstance(signal, dict):
                 values = tf.cast(signal["values"], tf.complex128)
+                # np.savetxt("signal.txt",values.numpy())
                 ts = tf.cast(signal["ts"], dtype=tf.complex128)
                 h = []
                 for i, sig in enumerate(values):
