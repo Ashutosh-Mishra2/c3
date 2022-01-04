@@ -48,7 +48,7 @@ class Instruction:
         name: str = " ",
         targets: list = None,
         params: dict = None,
-        ideal: np.array = None,
+        ideal: np.ndarray = None,
         channels: List[str] = [],
         t_start: float = None,
         t_end: float = None,

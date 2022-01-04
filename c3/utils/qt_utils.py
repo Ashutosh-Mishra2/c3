@@ -96,7 +96,7 @@ def hilbert_space_kron(op, indx, dims):
     return np_kron_n(op_list)
 
 
-def rotation(phase: float, xyz: np.array) -> np.array:
+def rotation(phase: float, xyz: np.ndarray) -> np.ndarray:
     """General Rotation using Euler's formula.
 
     Parameters
@@ -117,7 +117,7 @@ def rotation(phase: float, xyz: np.array) -> np.array:
     return rot
 
 
-def basis(lvls: int, pop_lvl: int) -> np.array:
+def basis(lvls: int, pop_lvl: int) -> np.ndarray:
     """
     Construct a basis state vector.
 

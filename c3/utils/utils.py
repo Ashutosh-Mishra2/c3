@@ -68,7 +68,7 @@ def replace_symlink(path: str, alias: str) -> None:
 def eng_num(val: float) -> Tuple[float, str]:
     """Convert a number to engineering notation by returning number and prefix."""
     if np.array(val).size > 1:
-        return np.array(val), ""
+        return val, ""
     if np.isnan(val):
         return np.nan, "NaN"
     big_units = ["", "K", "M", "G", "T", "P", "E", "Z"]

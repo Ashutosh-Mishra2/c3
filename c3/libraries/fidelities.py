@@ -79,7 +79,7 @@ def state_transfer_infid_set(
 
 
 @fid_reg_deco
-def state_transfer_infid(ideal: np.array, actual: tf.constant, index, dims, psi_0):
+def state_transfer_infid(ideal: np.ndarray, actual: tf.constant, index, dims, psi_0):
     """
     Single gate state transfer infidelity. The dimensions of psi_0 and ideal need to be
     compatible and index and dims need to project actual to these same dimensions.
@@ -113,7 +113,7 @@ def state_transfer_infid(ideal: np.array, actual: tf.constant, index, dims, psi_
 
 @fid_reg_deco
 def unitary_infid(
-    ideal: np.array, actual: tf.Tensor, index: List[int] = None, dims=None
+    ideal: np.ndarray, actual: tf.Tensor, index: List[int] = None, dims=None
 ) -> tf.Tensor:
     """
     Unitary overlap between ideal and actually performed gate.
@@ -179,7 +179,7 @@ def unitary_infid_set(propagators: dict, instructions: dict, index, dims, n_eval
 
 @fid_reg_deco
 def lindbladian_unitary_infid(
-    ideal: np.array, actual: tf.constant, index=[0], dims=[2]
+    ideal: np.ndarray, actual: tf.constant, index=[0], dims=[2]
 ) -> tf.constant:
     """
     Variant of the unitary fidelity for the Lindbladian propagator.
@@ -243,7 +243,7 @@ def lindbladian_unitary_infid_set(
 
 @fid_reg_deco
 def average_infid(
-    ideal: np.array, actual: tf.Tensor, index: List[int] = [0], dims=[2]
+    ideal: np.ndarray, actual: tf.Tensor, index: List[int] = [0], dims=[2]
 ) -> tf.constant:
     """
     Average fidelity uses the Pauli basis to compare. Thus, perfect gates are
@@ -326,8 +326,94 @@ def average_infid_seq(propagators: dict, instructions: dict, index, dims, n_eval
 
 
 @fid_reg_deco
+def average_infid_full_hilbert_space(
+    ideal: np.ndarray, actual: tf.Tensor, index: List[int] = [0], dims=[2]
+) -> tf.constant:
+    """
+    Average infidelity using the full Hilbert space.
+
+    Parameters
+    ----------
+    ideal: np.array
+        Contains ideal unitary representations of the gate
+    actual: tf.Tensor
+        Contains actual unitary representations of the gate
+    index : List[int]
+        Index of the qubit(s) in the Hilbert space to be evaluated
+    dims : list
+        List of dimensions of qubits
+    """
+
+    infid = 1 - tf_average_fidelity(actual, ideal, lvls=None)
+    return infid
+
+
+@fid_reg_deco
+def average_infid_set_full_hilbert_space(
+    propagators: dict, instructions: dict, index: List[int], dims, n_eval=-1
+):
+    """
+    Mean average fidelity over all gates in propagators in full Hilbert space.
+
+    Parameters
+    ----------
+    propagators : dict
+        Contains unitary representations of the gates, identified by a key.
+    index : int
+        Index of the qubit(s) in the Hilbert space to be evaluated
+    dims : list
+        List of dimensions of qubits
+    proj : boolean
+        Project to computational subspace
+
+    Returns
+    -------
+    tf.float64
+        Mean average fidelity
+    """
+    infids = []
+    for gate, propagator in propagators.items():
+        perfect_gate = instructions[gate].get_ideal_gate(dims, index)
+        infid = average_infid_full_hilbert_space(perfect_gate, propagator, index, dims)
+        infids.append(infid)
+    return tf.reduce_mean(infids)
+
+
+@fid_reg_deco
+def average_infid_seq_full_hilbert_space(
+    propagators: dict, instructions: dict, index, dims, n_eval=-1
+):
+    """
+    Average sequence fidelity over all gates in propagators in full Hilbert space.
+
+    Parameters
+    ----------
+    propagators : dict
+        Contains unitary representations of the gates, identified by a key.
+    index : int
+        Index of the qubit(s) in the Hilbert space to be evaluated
+    dims : list
+        List of dimensions of qubits
+    proj : boolean
+        Project to computational subspace
+
+    Returns
+    -------
+    tf.float64
+        Mean average fidelity
+    """
+    fid = 1
+    for gate, propagator in propagators.items():
+        perfect_gate = instructions[gate].get_ideal_gate(dims)
+        fid *= 1 - average_infid_full_hilbert_space(
+            perfect_gate, propagator, index, dims
+        )
+    return 1 - fid
+
+
+@fid_reg_deco
 def lindbladian_average_infid(
-    ideal: np.array, actual: tf.constant, index=[0], dims=[2]
+    ideal: np.ndarray, actual: tf.constant, index=[0], dims=[2]
 ) -> tf.constant:
     """
     Average fidelity uses the Pauli basis to compare. Thus, perfect gates are
