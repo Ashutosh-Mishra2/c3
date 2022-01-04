@@ -373,7 +373,9 @@ def average_infid_set_full_hilbert_space(
     """
     infids = []
     for gate, propagator in propagators.items():
-        perfect_gate = instructions[gate].get_ideal_gate(dims, index)
+        perfect_gate = instructions[gate].get_ideal_gate(
+            dims, index, full_hilbert_space=True
+        )
         infid = average_infid_full_hilbert_space(perfect_gate, propagator, index, dims)
         infids.append(infid)
     return tf.reduce_mean(infids)
@@ -404,7 +406,7 @@ def average_infid_seq_full_hilbert_space(
     """
     fid = 1
     for gate, propagator in propagators.items():
-        perfect_gate = instructions[gate].get_ideal_gate(dims)
+        perfect_gate = instructions[gate].get_ideal_gate(dims, full_hilbert_space=True)
         fid *= 1 - average_infid_full_hilbert_space(
             perfect_gate, propagator, index, dims
         )

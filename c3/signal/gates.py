@@ -92,7 +92,7 @@ class Instruction:
             asdict["ideal"] = self.ideal
         return asdict
 
-    def get_ideal_gate(self, dims, index=None):
+    def get_ideal_gate(self, dims, index=None, full_hilbert_space=False):
         if self.ideal is None:
             raise Exception(
                 "C3:ERROR: No ideal representation definded for gate"
@@ -103,11 +103,14 @@ class Instruction:
         if targets is None:
             targets = list(range(len(dims)))
 
-        ideal_gate = insert_mat_kron(
-            [2] * len(dims),  # we compare to the computational basis
-            targets,
-            [self.ideal],
-        )
+        if full_hilbert_space:
+            ideal_gate = self.ideal
+        else:
+            ideal_gate = insert_mat_kron(
+                [2] * len(dims),  # we compare to the computational basis
+                targets,
+                [self.ideal],
+            )
 
         if index:
             ideal_gate = tf_project_to_comp(
