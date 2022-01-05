@@ -104,7 +104,7 @@ class Instruction:
             targets = list(range(len(dims)))
 
         if full_hilbert_space:
-            ideal_gate = self.ideal
+            ideal_gate = tf.constant(self.ideal, dtype=tf.complex128)
         else:
             ideal_gate = insert_mat_kron(
                 [2] * len(dims),  # we compare to the computational basis
