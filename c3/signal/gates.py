@@ -111,11 +111,10 @@ class Instruction:
                 targets,
                 [self.ideal],
             )
-
-        if index:
-            ideal_gate = tf_project_to_comp(
-                ideal_gate, dims=[2] * len(dims), index=index
-            )
+            if index:
+                ideal_gate = tf_project_to_comp(
+                    ideal_gate, dims=[2] * len(dims), index=index
+                )
 
         return ideal_gate
 
