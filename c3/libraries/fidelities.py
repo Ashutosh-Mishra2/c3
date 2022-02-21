@@ -178,6 +178,76 @@ def unitary_infid_set(propagators: dict, instructions: dict, index, dims, n_eval
 
 
 @fid_reg_deco
+def unitary_infid_full(
+    ideal: np.ndarray, actual: tf.Tensor, index: List[int] = None, dims=None
+) -> tf.Tensor:
+    """
+    Unitary overlap between ideal and actually performed gate for Full Hilbert space.
+
+    Parameters
+    ----------
+    ideal : np.array
+        Ideal or goal unitary representation of the gate.
+    actual : np.array
+        Actual, physical unitary representation of the gate.
+    index : List[int]
+        Index of the qubit(s) in the Hilbert space to be evaluated
+    gate : str
+        One of the keys of propagators, selects the gate to be evaluated
+    dims : list
+        List of dimensions of qubits
+
+    Returns
+    -------
+    tf.float
+        Unitary fidelity.
+    """
+    if index is None:
+        index = list(range(len(dims)))
+    actual_comp = tf_project_to_comp(actual, dims=dims, index=index)
+    print("dims = ", dims)
+    print("actual_comp =", actual_comp)
+    fid_lvls = 2 ** len(index)
+    infid = 1 - tf_unitary_overlap(actual_comp, ideal, lvls=fid_lvls)
+    return infid
+
+
+@fid_reg_deco
+def unitary_infid_set_full(
+    propagators: dict, instructions: dict, index, dims, n_eval=-1
+):
+    """
+    Mean unitary overlap between ideal and actually performed gate for the gates in
+    propagators for Full Hilbert space.
+
+    Parameters
+    ----------
+    propagators : dict
+        Contains actual unitary representations of the gates, resulting from physical
+        simulation
+    instructions : dict
+        Contains the perfect unitary representations of the gates, identified by a key.
+    index : List[int]
+        Index of the qubit(s) in the Hilbert space to be evaluated
+    dims : list
+        List of dimensions of qubits
+    n_eval : int
+        Number of evaluation
+
+    Returns
+    -------
+    tf.float
+        Unitary fidelity.
+    """
+    infids = []
+    for gate, propagator in propagators.items():
+        perfect_gate = instructions[gate].get_ideal_gate(dims, index)
+        infid = unitary_infid(perfect_gate, propagator, index, dims)
+        infids.append(infid)
+    return tf.reduce_mean(infids)
+
+
+@fid_reg_deco
 def lindbladian_unitary_infid(
     ideal: np.ndarray, actual: tf.constant, index=[0], dims=[2]
 ) -> tf.constant:
@@ -322,94 +392,6 @@ def average_infid_seq(propagators: dict, instructions: dict, index, dims, n_eval
     for gate, propagator in propagators.items():
         perfect_gate = instructions[gate].get_ideal_gate(dims)
         fid *= 1 - average_infid(perfect_gate, propagator, index, dims)
-    return 1 - fid
-
-
-@fid_reg_deco
-def average_infid_full_hilbert_space(
-    ideal: np.ndarray, actual: tf.Tensor, index: List[int] = [0], dims=[2]
-) -> tf.constant:
-    """
-    Average infidelity using the full Hilbert space.
-
-    Parameters
-    ----------
-    ideal: np.array
-        Contains ideal unitary representations of the gate
-    actual: tf.Tensor
-        Contains actual unitary representations of the gate
-    index : List[int]
-        Index of the qubit(s) in the Hilbert space to be evaluated
-    dims : list
-        List of dimensions of qubits
-    """
-
-    infid = 1 - tf_average_fidelity(actual, ideal, lvls=None)
-    return infid
-
-
-@fid_reg_deco
-def average_infid_set_full_hilbert_space(
-    propagators: dict, instructions: dict, index: List[int], dims, n_eval=-1
-):
-    """
-    Mean average fidelity over all gates in propagators in full Hilbert space.
-
-    Parameters
-    ----------
-    propagators : dict
-        Contains unitary representations of the gates, identified by a key.
-    index : int
-        Index of the qubit(s) in the Hilbert space to be evaluated
-    dims : list
-        List of dimensions of qubits
-    proj : boolean
-        Project to computational subspace
-
-    Returns
-    -------
-    tf.float64
-        Mean average fidelity
-    """
-    infids = []
-    for gate, propagator in propagators.items():
-        perfect_gate = instructions[gate].get_ideal_gate(
-            dims, index, full_hilbert_space=True
-        )
-        infid = average_infid_full_hilbert_space(perfect_gate, propagator, index, dims)
-        infids.append(infid)
-    return tf.reduce_mean(infids)
-
-
-@fid_reg_deco
-def average_infid_seq_full_hilbert_space(
-    propagators: dict, instructions: dict, index, dims, n_eval=-1
-):
-    """
-    Average sequence fidelity over all gates in propagators in full Hilbert space.
-
-    Parameters
-    ----------
-    propagators : dict
-        Contains unitary representations of the gates, identified by a key.
-    index : int
-        Index of the qubit(s) in the Hilbert space to be evaluated
-    dims : list
-        List of dimensions of qubits
-    proj : boolean
-        Project to computational subspace
-
-    Returns
-    -------
-    tf.float64
-        Mean average fidelity
-    """
-    fid = 1
-    for gate, propagator in propagators.items():
-        perfect_gate = instructions[gate].get_ideal_gate(dims, full_hilbert_space=True)
-        fid *= 1 - average_infid_full_hilbert_space(
-            perfect_gate, propagator, index, dims
-        )
     return 1 - fid
 
 
