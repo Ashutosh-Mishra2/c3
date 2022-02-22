@@ -204,11 +204,11 @@ def unitary_infid_full(
     """
     if index is None:
         index = list(range(len(dims)))
-    actual_comp = tf_project_to_comp(actual, dims=dims, index=index)
-    print("dims = ", dims)
-    print("actual_comp =", actual_comp)
-    fid_lvls = 2 ** len(index)
-    infid = 1 - tf_unitary_overlap(actual_comp, ideal, lvls=fid_lvls)
+    # actual_comp = tf_project_to_comp(actual, dims=dims, index=index)
+    # fid_lvls = 2 ** len(index)
+    # infid = 1 - tf_unitary_overlap(actual_comp, ideal, lvls=None)
+    infid = 1 - tf_unitary_overlap(actual, ideal, lvls=None)
+    print("infid = ", infid.numpy())
     return infid
 
 
@@ -241,8 +241,10 @@ def unitary_infid_set_full(
     """
     infids = []
     for gate, propagator in propagators.items():
-        perfect_gate = instructions[gate].get_ideal_gate(dims, index)
-        infid = unitary_infid(perfect_gate, propagator, index, dims)
+        perfect_gate = instructions[gate].get_ideal_gate(
+            dims, index, full_hilbert_space=True
+        )
+        infid = unitary_infid_full(perfect_gate, propagator, index, dims)
         infids.append(infid)
     return tf.reduce_mean(infids)
 
