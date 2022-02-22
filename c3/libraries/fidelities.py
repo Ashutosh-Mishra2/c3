@@ -204,11 +204,8 @@ def unitary_infid_full(
     """
     if index is None:
         index = list(range(len(dims)))
-    # actual_comp = tf_project_to_comp(actual, dims=dims, index=index)
-    # fid_lvls = 2 ** len(index)
-    # infid = 1 - tf_unitary_overlap(actual_comp, ideal, lvls=None)
     infid = 1 - tf_unitary_overlap(actual, ideal, lvls=None)
-    print("infid = ", infid.numpy())
+    print("infid = ", infid.numpy()[0])
     return infid
 
 
