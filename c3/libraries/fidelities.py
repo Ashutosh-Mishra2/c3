@@ -873,3 +873,29 @@ def orbit_infid(
 
         infids.append(infid)
     return tf_ave(infids)
+
+
+@fid_reg_deco
+def IQ_plane_distance(
+    propagators: dict, instructions: dict, index, dims, params, n_eval=-1
+):
+    infids = []
+    psi_g = params["ground_state"]
+    psi_e = params["excited_state"]
+    a_rotated = params["a_rotated"]
+    d_max = params["cutoff_distance"]
+
+    for gate, propagator in propagators.items():
+        U = tf.matmul(
+            tf.transpose(propagator, conjugate=True), tf.matmul(a_rotated, propagator)
+        )
+        alpha0 = tf.matmul(tf.matmul(tf.transpose(psi_g, conjugate=True), U), psi_g)[
+            0, 0
+        ]
+        alpha1 = tf.matmul(tf.matmul(tf.transpose(psi_e, conjugate=True), U), psi_e)[
+            0, 0
+        ]
+        distance = tf.abs(alpha0 - alpha1)
+        infids.append(tf.exp(-distance / d_max))
+
+    return tf.reduce_mean(infids)
