@@ -899,3 +899,46 @@ def IQ_plane_distance(
         infids.append(tf.exp(-distance / d_max))
 
     return tf.reduce_mean(infids)
+
+
+@fid_reg_deco
+def swap_and_readout(
+    propagators: dict, instructions: dict, index, dims, params, n_eval=-1
+):
+    infids = []
+    psi_g = params["ground_state"]
+    psi_e = params["excited_state"]
+    a_rotated = params["a_rotated"]
+    d_max = params["cutoff_distance"]
+    psi_0 = params["psi_0"]
+    swap_cost = params["swap_cost"]
+
+    for gate, propagator in propagators.items():
+
+        # calculate infidelity for IQ plane distance
+        U = tf.matmul(
+            tf.transpose(propagator, conjugate=True), tf.matmul(a_rotated, propagator)
+        )
+        # instead of calculating the U like this should we just calculate U|psi> and then take the expectation after that
+        alpha0 = tf.matmul(tf.matmul(tf.transpose(psi_g, conjugate=True), U), psi_g)[
+            0, 0
+        ]
+        alpha1 = tf.matmul(tf.matmul(tf.transpose(psi_e, conjugate=True), U), psi_e)[
+            0, 0
+        ]
+        distance = tf.abs(alpha0 - alpha1)
+        iq_infid = tf.exp(-distance / d_max)
+
+        # calculate infidelity for swap
+        ideal_swap_gate = instructions[gate].get_ideal_gate(
+            dims, full_hilbert_space=True
+        )
+        psi_swap_ideal = tf.matmul(ideal_swap_gate, psi_0)
+        psi_swap_actual = tf.matmul(propagator, psi_0)
+        overlap = tf_ketket_fid(psi_swap_ideal, psi_swap_actual)
+        swap_infid = 1 - overlap
+
+        infid = iq_infid + swap_cost * swap_infid
+        infids.append(infid)
+
+    return tf.reduce_mean(infids)
