@@ -203,3 +203,26 @@ def z_drive(a):
     """
     a_dag = a.T.conj()
     return np.matmul(a_dag, a)
+
+
+@hamiltonian_reg_deco
+def int_ZX(anhs):
+    """
+    longitudinal coupling.
+
+    Parameters
+    ----------
+    anhs : Tensor list
+        Annihilators.
+
+    Returns
+    -------
+    Tensor
+        coupling.
+
+    """
+    a = anhs[0]
+    b = anhs[1]
+    a_dag = a.T.conj()
+    b_dag = b.T.conj()
+    return np.matmul(np.matmul(a_dag, a), b_dag + b)
