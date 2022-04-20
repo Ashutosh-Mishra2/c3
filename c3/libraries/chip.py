@@ -269,8 +269,18 @@ class Resonator(PhysicalComponent):
         )
 
     def init_Ls(self, ann_oper):
-        """NOT IMPLEMENTED"""
-        pass
+        """
+        Initialize Lindbladian components.
+
+        Parameters
+        ----------
+        ann_oper : np.array
+            Annihilation operator in the full Hilbert space
+
+        """
+        self.collapse_ops["t1"] = ann_oper
+        self.collapse_ops["temp"] = ann_oper.T.conj()
+        self.collapse_ops["t2star"] = 2 * tf.matmul(ann_oper.T.conj(), ann_oper)
 
     def get_Hamiltonian(
         self, signal: Union[dict, bool] = None, transform: tf.Tensor = None
@@ -283,8 +293,37 @@ class Resonator(PhysicalComponent):
         return freq * Hs["freq"]
 
     def get_Lindbladian(self, dims):
-        """NOT IMPLEMENTED"""
-        pass
+        """
+        Compute the Lindbladian, based on relaxation, dephasing constants and finite
+        temperature.
+
+        Returns
+        -------
+        tf.Tensor
+            Lindbladian
+
+        """
+        Ls = []
+        if "t1" in self.params:
+            t1 = self.params["t1"].get_value()
+            gamma = (0.5 / t1) ** 0.5
+            L = gamma * self.collapse_ops["t1"]
+            Ls.append(L)
+            if "temp" in self.params:
+                freq = self.params["freq"].get_value()
+                freq_diff = np.array([freq for n in range(self.hilbert_dim)])
+                beta = 1 / (self.params["temp"].get_value() * kb)
+                det_bal = tf.exp(-hbar * tf.cast(freq_diff, tf.float64) * beta)
+                det_bal_mat = hskron(tf.linalg.tensor_diag(det_bal), self.index, dims)
+                L = gamma * tf.matmul(self.collapse_ops["temp"], det_bal_mat)
+                Ls.append(L)
+        if "t2star" in self.params:
+            gamma = (0.5 / self.params["t2star"].get_value()) ** 0.5
+            L = gamma * self.collapse_ops["t2star"]
+            Ls.append(L)
+        if not Ls:
+            raise Exception("No T1 or T2 provided")
+        return tf.cast(sum(Ls), tf.complex128)
 
 
 @dev_reg_deco
