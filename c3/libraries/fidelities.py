@@ -888,8 +888,8 @@ def IQ_plane_distance(
     lindbladian = params["lindbladian"]
 
     if lindbladian:
-        psi_g = tf_dm_to_vec(tf_state_to_dm(psi_g))
-        psi_e = tf_dm_to_vec(tf_state_to_dm(psi_e))
+        psi_g = tf_dm_to_vec(psi_g)
+        psi_e = tf_dm_to_vec(psi_e)
 
     for gate, propagator in propagators.items():
         psi_g_t = tf.matmul(propagator, psi_g)
