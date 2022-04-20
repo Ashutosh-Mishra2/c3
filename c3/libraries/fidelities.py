@@ -19,6 +19,7 @@ from c3.utils.tf_utils import (
     tf_average_fidelity,
     tf_superoper_average_fidelity,
     tf_state_to_dm,
+    tf_vec_to_dm,
 )
 
 from c3.libraries.propagation import (
@@ -884,17 +885,28 @@ def IQ_plane_distance(
     psi_e = params["excited_state"]
     a_rotated = params["a_rotated"]
     d_max = params["cutoff_distance"]
+    lindbladian = params["lindbladian"]
+
+    if lindbladian:
+        psi_g = tf_dm_to_vec(tf_state_to_dm(psi_g))
+        psi_e = tf_dm_to_vec(tf_state_to_dm(psi_e))
 
     for gate, propagator in propagators.items():
-        U = tf.matmul(
-            tf.transpose(propagator, conjugate=True), tf.matmul(a_rotated, propagator)
-        )
-        alpha0 = tf.matmul(tf.matmul(tf.transpose(psi_g, conjugate=True), U), psi_g)[
-            0, 0
-        ]
-        alpha1 = tf.matmul(tf.matmul(tf.transpose(psi_e, conjugate=True), U), psi_e)[
-            0, 0
-        ]
+        psi_g_t = tf.matmul(propagator, psi_g)
+        psi_e_t = tf.matmul(propagator, psi_e)
+
+        if lindbladian:
+            psi_g_t = tf_vec_to_dm(psi_g_t)
+            psi_e_t = tf_vec_to_dm(psi_e_t)
+            alpha0 = tf.linalg.trace(tf.matmul(psi_g_t, a_rotated))
+            alpha1 = tf.linalg.trace(tf.matmul(psi_e_t, a_rotated))
+        else:
+            alpha0 = tf.matmul(
+                tf.matmul(tf.transpose(psi_g_t, conjugate=True), a_rotated), psi_g_t
+            )[0, 0]
+            alpha1 = tf.matmul(
+                tf.matmul(tf.transpose(psi_e_t, conjugate=True), a_rotated), psi_e_t
+            )[0, 0]
         distance = tf.abs(alpha0 - alpha1)
         infids.append(tf.exp(-distance / d_max))
 
