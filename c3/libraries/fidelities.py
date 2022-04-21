@@ -19,6 +19,7 @@ from c3.utils.tf_utils import (
     tf_average_fidelity,
     tf_superoper_average_fidelity,
     tf_state_to_dm,
+    tf_vec_to_dm,
 )
 
 from c3.libraries.propagation import evaluate_sequences
@@ -788,3 +789,40 @@ def orbit_infid(
 
         infids.append(infid)
     return tf_ave(infids)
+
+
+@fid_reg_deco
+def IQ_plane_distance(
+    propagators: dict, instructions: dict, index, dims, params, n_eval=-1
+):
+    infids = []
+    psi_g = params["ground_state"]
+    psi_e = params["excited_state"]
+    a_rotated = params["a_rotated"]
+    d_max = params["cutoff_distance"]
+    lindbladian = params["lindbladian"]
+
+    if lindbladian:
+        psi_g = tf_dm_to_vec(psi_g)
+        psi_e = tf_dm_to_vec(psi_e)
+
+    for gate, propagator in propagators.items():
+        psi_g_t = tf.matmul(propagator, psi_g)
+        psi_e_t = tf.matmul(propagator, psi_e)
+
+        if lindbladian:
+            psi_g_t = tf_vec_to_dm(psi_g_t)
+            psi_e_t = tf_vec_to_dm(psi_e_t)
+            alpha0 = tf.linalg.trace(tf.matmul(psi_g_t, a_rotated))
+            alpha1 = tf.linalg.trace(tf.matmul(psi_e_t, a_rotated))
+        else:
+            alpha0 = tf.matmul(
+                tf.matmul(tf.transpose(psi_g_t, conjugate=True), a_rotated), psi_g_t
+            )[0, 0]
+            alpha1 = tf.matmul(
+                tf.matmul(tf.transpose(psi_e_t, conjugate=True), a_rotated), psi_e_t
+            )[0, 0]
+        distance = tf.abs(alpha0 - alpha1)
+        infids.append(tf.exp(-distance / d_max))
+
+    return tf.reduce_mean(infids)
