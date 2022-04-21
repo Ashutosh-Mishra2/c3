@@ -272,7 +272,14 @@ def pwc(model: Model, gen: Generator, instr: Instruction, folding_stack: list) -
 
     batch_size = tf.constant(len(h0), tf.int32)
 
-    dUs = tf_batch_propagate(h0, hks, signals, dt, batch_size=batch_size)
+    if model.lindbladian:
+        col_ops = model.get_Lindbladians()
+        if model.max_excitations:
+            cutter = model.ex_cutter
+            col_ops = [cutter @ col_op @ cutter.T for col_op in col_ops]
+        dUs = tf_propagation_lind(h0, hks, col_ops, signals, dt)
+    else:
+        dUs = tf_batch_propagate(h0, hks, signals, dt, batch_size=batch_size)
 
     # U = tf_matmul_left(tf.cast(dUs, tf.complex128))
     U = tf_matmul_n(dUs, folding_stack)
