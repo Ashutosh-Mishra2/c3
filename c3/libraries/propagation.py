@@ -277,7 +277,15 @@ def pwc(model: Model, gen: Generator, instr: Instruction, folding_stack: list) -
         if model.max_excitations:
             cutter = model.ex_cutter
             col_ops = [cutter @ col_op @ cutter.T for col_op in col_ops]
-        dUs = tf_propagation_lind(h0, hks, col_ops, signals, dt)
+        dUs = tf_batch_propagate(
+            h0,
+            hks,
+            signals,
+            dt,
+            batch_size=batch_size,
+            col_ops=col_ops,
+            lindbladian=True,
+        )
     else:
         dUs = tf_batch_propagate(h0, hks, signals, dt, batch_size=batch_size)
 
@@ -407,7 +415,9 @@ def pwc_trott_drift(h0, hks, cflds_t, dt):
     return dUs
 
 
-def tf_batch_propagate(hamiltonian, hks, signals, dt, batch_size):
+def tf_batch_propagate(
+    hamiltonian, hks, signals, dt, batch_size, col_ops=None, lindbladian=False
+):
     """
     Propagate signal in batches
     Parameters
@@ -450,9 +460,16 @@ def tf_batch_propagate(hamiltonian, hks, signals, dt, batch_size):
     for i in range(batches):
         x = batch_array.read(i)
         if signals is not None:
-            result = tf_propagation_vectorized(hamiltonian, hks, x, dt)
+            if lindbladian:
+                result = tf_propagation_lind(hamiltonian, hks, col_ops, x, dt)
+            else:
+                result = tf_propagation_vectorized(hamiltonian, hks, x, dt)
         else:
-            result = tf_propagation_vectorized(x, None, None, dt)
+            if lindbladian:
+                # TODO - Check if it works
+                result = tf_propagation_lind(x, None, None, None, dt)
+            else:
+                result = tf_propagation_vectorized(x, None, None, dt)
         dUs_array = dUs_array.write(i, result)
     return dUs_array.concat()
 
