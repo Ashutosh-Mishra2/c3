@@ -223,7 +223,13 @@ def gen_u_rk4(h, dt, dim):
 
 
 @unitary_deco
-def pwc(model: Model, gen: Generator, instr: Instruction, folding_stack: list) -> Dict:
+def pwc(
+    model: Model,
+    gen: Generator,
+    instr: Instruction,
+    folding_stack: list,
+    batch_size=None,
+) -> Dict:
     """
     Solve the equation of motion (Lindblad or Schrรถdinger) for a given control
     signal and Hamiltonians.
@@ -270,7 +276,8 @@ def pwc(model: Model, gen: Generator, instr: Instruction, folding_stack: list) -
 
     dt = ts[1] - ts[0]
 
-    batch_size = tf.constant(len(h0), tf.int32)
+    if batch_size is None:
+        batch_size = tf.constant(len(h0), tf.int32)
 
     if model.lindbladian:
         col_ops = model.get_Lindbladians()

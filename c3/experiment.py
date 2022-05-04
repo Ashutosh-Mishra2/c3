@@ -499,7 +499,11 @@ class Experiment:
             model.controllability = self.use_control_fields
             steps = int((instr.t_end - instr.t_start) * self.sim_res)
             result = self.propagation(
-                model, generator, instr, self.folding_stack[steps]
+                model,
+                generator,
+                instr,
+                self.folding_stack[steps],
+                self.propagate_batch_size,
             )
             U = result["U"]
             dUs = result["dUs"]
