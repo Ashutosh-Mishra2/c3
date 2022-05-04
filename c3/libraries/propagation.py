@@ -278,6 +278,8 @@ def pwc(
 
     if batch_size is None:
         batch_size = tf.constant(len(h0), tf.int32)
+    else:
+        batch_size = tf.constant(batch_size, tf.int32)
 
     if model.lindbladian:
         col_ops = model.get_Lindbladians()
