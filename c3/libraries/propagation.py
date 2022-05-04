@@ -453,7 +453,7 @@ def tf_batch_propagate(
         )
         for i in range(batches):
             batch_array = batch_array.write(
-                i, signals[i * batch_size : i * batch_size + batch_size]
+                i, signals[:, i * batch_size : i * batch_size + batch_size]
             )
     else:
         batches = int(tf.math.ceil(hamiltonian.shape[0] / batch_size))
