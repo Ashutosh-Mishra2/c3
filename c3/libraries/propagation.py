@@ -447,7 +447,7 @@ def tf_batch_propagate(
 
     """
     if signals is not None:
-        batches = int(tf.math.ceil(signals.shape[0] / batch_size))
+        batches = int(tf.math.ceil(signals.shape[1] / batch_size))
         batch_array = tf.TensorArray(
             signals.dtype, size=batches, dynamic_size=False, infer_shape=False
         )
