@@ -173,7 +173,8 @@ class OptimalControl(Optimizer):
         """
         self.pmap.set_parameters_scaled(current_params)
         dims = self.pmap.model.dims
-        propagators = self.exp.compute_propagators()
+        # propagators = self.exp.compute_propagators()
+        propagators = self.exp.compute_final_propagator()
 
         goal = self.fid_func(
             propagators=propagators,

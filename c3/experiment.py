@@ -659,3 +659,82 @@ class Experiment:
             rho = tf_state_to_dm(state)
         trace = np.trace(np.matmul(rho, oper))
         return [[np.real(trace)]]  # ,[np.imag(trace)]]
+
+    def compute_final_propagator(self):
+        """
+        Compute the final unitary representation of operations. If no operations are
+        specified in self.opt_gates the complete gateset is computed.
+
+        Returns
+        -------
+        dict
+            A dictionary of gate names and their unitary representation.
+        """
+        model = self.pmap.model
+        generator = self.pmap.generator
+        instructions = self.pmap.instructions
+        propagators = {}
+        gate_ids = self.opt_gates
+        if gate_ids is None:
+            gate_ids = instructions.keys()
+
+        for gate in gate_ids:
+            try:
+                instr = instructions[gate]
+            except KeyError:
+                raise Exception(
+                    f"C3:Error: Gate '{gate}' is not defined."
+                    f" Available gates are:\n {list(instructions.keys())}."
+                )
+
+            model.controllability = self.use_control_fields
+            steps = int((instr.t_end - instr.t_start) * self.sim_res)
+            result = unitary_provider["final_propagator"](
+                model, generator, instr, self.folding_stack[steps]
+            )
+            U = result["U"]
+            self.ts = result["ts"]
+            if model.use_FR:
+                # TODO change LO freq to at the level of a line
+                freqs = {}
+                framechanges = {}
+                for line, ctrls in instr.comps.items():
+                    # TODO calculate properly the average frequency that each qubit sees
+                    offset = tf.constant(0.0, tf.float64)
+                    for ctrl in ctrls.values():
+                        if "freq_offset" in ctrl.params.keys():
+                            if ctrl.params["amp"] != 0.0:
+                                offset = ctrl.params["freq_offset"].get_value()
+                    freqs[line] = tf.cast(
+                        ctrls["carrier"].params["freq"].get_value() + offset,
+                        tf.complex128,
+                    )
+                    framechanges[line] = tf.cast(
+                        ctrls["carrier"].params["framechange"].get_value(),
+                        tf.complex128,
+                    )
+                t_final = tf.constant(instr.t_end - instr.t_start, dtype=tf.complex128)
+                FR = model.get_Frame_Rotation(t_final, freqs, framechanges)
+                if model.lindbladian:
+                    SFR = tf_super(FR)
+                    U = tf.matmul(SFR, U)
+                    self.FR = SFR
+                else:
+                    U = tf.matmul(FR, U)
+                    self.FR = FR
+            if model.dephasing_strength != 0.0:
+                if not model.lindbladian:
+                    raise ValueError("Dephasing can only be added when lindblad is on.")
+                else:
+                    amps = {}
+                    for line, ctrls in instr.comps.items():
+                        amp, sum = generator.devices["awg"].get_average_amp()
+                        amps[line] = tf.cast(amp, tf.complex128)
+                    t_final = tf.constant(
+                        instr.t_end - instr.t_start, dtype=tf.complex128
+                    )
+                    dephasing_channel = model.get_dephasing_channel(t_final, amps)
+                    U = tf.matmul(dephasing_channel, U)
+            propagators[gate] = U
+
+        return propagators
