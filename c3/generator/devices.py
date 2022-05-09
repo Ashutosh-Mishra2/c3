@@ -1301,11 +1301,11 @@ class QuadraturesToValues(Device):
         dict
             Output signal values.
         """
-        i1 = iqsignal["inphase"]
-        q1 = iqsignal["quadrature"]
-        self.signal = {
+        i1 = iqsignal[0]["inphase"]
+        q1 = iqsignal[0]["quadrature"]
+        self.signal = [{
             "values": tf.sqrt(tf.add(tf.square(i1), tf.square(q1))),
             "ts": iqsignal["ts"],
-        }
+        }]
 
         return self.signal
