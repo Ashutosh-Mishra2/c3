@@ -1280,3 +1280,32 @@ class AWG(Device):
             logfile.write(hjson.dumps(signal, default=hjson_encode))
             logfile.write("\n")
             logfile.flush()
+
+@dev_reg_deco
+class QuadraturesToValues(Device):
+    """Converts signal inphase and quadrature to signal values"""
+
+    def __init__(self, **props):
+        super().__init__(**props)
+        self.inputs = props.pop("inputs", 1)
+        self.outputs = props.pop("outputs", 1)
+
+    def process(self, instr: Instruction, chan: str, iqsignal: dict):
+        """Combine signal inphase and quadratures to values.
+        Parameters
+        ----------
+        iqsignal : dict
+            Input signal.
+        Returns
+        -------
+        dict
+            Output signal values.
+        """
+        i1 = iqsignal["inphase"]
+        q1 = iqsignal["quadrature"]
+        self.signal = {
+            "values": tf.sqrt(tf.add(tf.square(i1), tf.square(q1))),
+            "ts": iqsignal["ts"],
+        }
+
+        return self.signal
