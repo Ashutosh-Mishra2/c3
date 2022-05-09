@@ -1303,9 +1303,9 @@ class QuadraturesToValues(Device):
         """
         i1 = iqsignal[0]["inphase"]
         q1 = iqsignal[0]["quadrature"]
-        self.signal = [{
+        self.signal = {
             "values": tf.sqrt(tf.add(tf.square(i1), tf.square(q1))),
             "ts": iqsignal[0]["ts"],
-        }]
+        }
 
         return self.signal
