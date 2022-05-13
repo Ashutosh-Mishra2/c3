@@ -855,7 +855,7 @@ def state_transfer_infid_set_full(
     for gate, propagator in propagators.items():
         perfect_gate = instructions[gate].get_ideal_gate(dims, full_hilbert_space=True)
         infid = state_transfer_infid_full(perfect_gate, propagator, index, dims, psi_0)
-        print("infid = ", infid.numpy()[0])
+        # print("infid = ", infid)
         infids.append(infid)
     return tf.reduce_mean(infids)
 
