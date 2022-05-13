@@ -826,3 +826,66 @@ def IQ_plane_distance(
         infids.append(tf.exp(-distance / d_max))
 
     return tf.reduce_mean(infids)
+
+
+@fid_reg_deco
+def state_transfer_infid_set_full(
+    propagators: dict, instructions: dict, index, dims, psi_0, proj=True, n_eval=-1
+):
+    """
+    Mean state transfer infidelity.
+    Parameters
+    ----------
+    propagators : dict
+        Contains unitary representations of the gates, identified by a key.
+    index : int
+        Index of the qubit(s) in the Hilbert space to be evaluated
+    dims : list
+        List of dimensions of qubits
+    psi_0 : tf.Tensor
+        Initial state of the device
+    proj : boolean
+        Project to computational subspace
+    Returns
+    -------
+    tf.float
+        State infidelity, averaged over the gates in propagators
+    """
+    infids = []
+    for gate, propagator in propagators.items():
+        perfect_gate = instructions[gate].get_ideal_gate(dims, full_hilbert_space=True)
+        infid = state_transfer_infid_full(perfect_gate, propagator, index, dims, psi_0)
+        print("infid = ", infid.numpy()[0])
+        infids.append(infid)
+    return tf.reduce_mean(infids)
+
+
+@fid_reg_deco
+def state_transfer_infid_full(
+    ideal: np.ndarray, actual: tf.constant, index, dims, psi_0
+):
+    """
+    Single gate state transfer infidelity. The dimensions of psi_0 and ideal need to be
+    compatible and index and dims need to project actual to these same dimensions.
+    Parameters
+    ----------
+    ideal: np.array
+        Contains ideal unitary representations of the gate
+    actual: tf.Tensor
+        Contains actual unitary representations of the gate
+    index : int
+        Index of the qubit(s) in the Hilbert space to be evaluated
+    dims : list
+        List of dimensions of qubits
+    psi_0: tf.Tensor
+        Initial state
+    Returns
+    -------
+    tf.float
+        State infidelity for the selected gate
+    """
+    psi_ideal = tf.matmul(ideal, psi_0)
+    psi_actual = tf.matmul(actual, psi_0)
+    overlap = tf_ketket_fid(psi_ideal, psi_actual)
+    infid = 1 - overlap
+    return infid
