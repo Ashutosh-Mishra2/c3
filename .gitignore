@@ -141,3 +141,10 @@ dmypy.json
 okteto.yml
 c3_DAQC/*
 c3_reset/*
+
+# Logs
+*c3log*
+
+examples/c3example_calibration/
+examples/ml_logs/
+examples/sensi_logs/
