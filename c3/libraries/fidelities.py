@@ -913,7 +913,7 @@ def swap_and_readout(
 
     for gate, propagator in propagators.items():
         print(gate)
-        if gate == "Readout[1]":
+        if "Readout" in gate:
             psi_g_t = tf.matmul(propagator, psi_g)
             psi_e_t = tf.matmul(propagator, psi_e)
 
@@ -933,7 +933,7 @@ def swap_and_readout(
             distance = tf.abs(alpha0 - alpha1)
             iq_infid = tf.exp(-distance / d_max)
 
-        if gate == "swap[0, 1]":
+        if "swap" in gate:
             # calculate infidelity for swap
             ideal_swap_gate = instructions[gate].get_ideal_gate(
                 dims, full_hilbert_space=True
@@ -957,7 +957,6 @@ def swap_and_readout(
             swap_infid = 1 - overlap
 
     iq_infid = tf.cast(iq_infid, dtype=tf.complex128)
-
     infid = iq_infid + swap_cost * swap_infid
     infids.append(infid)
 
