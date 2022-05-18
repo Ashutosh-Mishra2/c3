@@ -904,40 +904,61 @@ def swap_and_readout(
     swap_cost = params["swap_cost"]
     lindbladian = params["lindbladian"]
 
+    swap_cost = tf.constant(swap_cost, dtype=tf.complex128)
+
     if lindbladian:
         psi_g = tf_dm_to_vec(psi_g)
         psi_e = tf_dm_to_vec(psi_e)
+        psi_0 = tf_dm_to_vec(psi_0)
 
     for gate, propagator in propagators.items():
-        psi_g_t = tf.matmul(propagator, psi_g)
-        psi_e_t = tf.matmul(propagator, psi_e)
+        print(gate)
+        if gate == "Readout[1]":
+            psi_g_t = tf.matmul(propagator, psi_g)
+            psi_e_t = tf.matmul(propagator, psi_e)
 
-        if lindbladian:
-            psi_g_t = tf_vec_to_dm(psi_g_t)
-            psi_e_t = tf_vec_to_dm(psi_e_t)
-            alpha0 = tf.linalg.trace(tf.matmul(psi_g_t, a_rotated))
-            alpha1 = tf.linalg.trace(tf.matmul(psi_e_t, a_rotated))
-        else:
-            alpha0 = tf.matmul(
-                tf.matmul(tf.transpose(psi_g_t, conjugate=True), a_rotated), psi_g_t
-            )[0, 0]
-            alpha1 = tf.matmul(
-                tf.matmul(tf.transpose(psi_e_t, conjugate=True), a_rotated), psi_e_t
-            )[0, 0]
+            if lindbladian:
+                psi_g_t = tf_vec_to_dm(psi_g_t)
+                psi_e_t = tf_vec_to_dm(psi_e_t)
+                alpha0 = tf.linalg.trace(tf.matmul(psi_g_t, a_rotated))
+                alpha1 = tf.linalg.trace(tf.matmul(psi_e_t, a_rotated))
+            else:
+                alpha0 = tf.matmul(
+                    tf.matmul(tf.transpose(psi_g_t, conjugate=True), a_rotated), psi_g_t
+                )[0, 0]
+                alpha1 = tf.matmul(
+                    tf.matmul(tf.transpose(psi_e_t, conjugate=True), a_rotated), psi_e_t
+                )[0, 0]
 
-        distance = tf.abs(alpha0 - alpha1)
-        iq_infid = tf.exp(-distance / d_max)
+            distance = tf.abs(alpha0 - alpha1)
+            iq_infid = tf.exp(-distance / d_max)
 
-        # calculate infidelity for swap
-        ideal_swap_gate = instructions[gate].get_ideal_gate(
-            dims, full_hilbert_space=True
-        )
-        psi_swap_ideal = tf.matmul(ideal_swap_gate, psi_0)
-        psi_swap_actual = tf.matmul(propagator, psi_0)
-        overlap = tf_ketket_fid(psi_swap_ideal, psi_swap_actual)
-        swap_infid = 1 - overlap
+        if gate == "swap[0, 1]":
+            # calculate infidelity for swap
+            ideal_swap_gate = instructions[gate].get_ideal_gate(
+                dims, full_hilbert_space=True
+            )
 
-        infid = iq_infid + swap_cost * swap_infid
-        infids.append(infid)
+            if lindbladian:
+                ideal_swap_gate = tf_super(ideal_swap_gate)
 
-    return tf.reduce_mean(infids)
+                psi_swap_ideal = tf.matmul(ideal_swap_gate, psi_0)
+                psi_swap_actual = tf.matmul(propagator, psi_0)
+
+                psi_swap_ideal = tf_vec_to_dm(psi_swap_ideal)
+                psi_swap_actual = tf_vec_to_dm(psi_swap_actual)
+
+                overlap = tf.linalg.trace(tf.matmul(psi_swap_ideal, psi_swap_actual))
+            else:
+                psi_swap_ideal = tf.matmul(ideal_swap_gate, psi_0)
+                psi_swap_actual = tf.matmul(propagator, psi_0)
+                overlap = tf_ketket_fid(psi_swap_ideal, psi_swap_actual)
+
+            swap_infid = 1 - overlap
+
+    iq_infid = tf.cast(iq_infid, dtype=tf.complex128)
+
+    infid = iq_infid + swap_cost * swap_infid
+    infids.append(infid)
+
+    return tf.abs(tf.reduce_mean(infids))
