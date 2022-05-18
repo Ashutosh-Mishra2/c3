@@ -889,3 +889,55 @@ def state_transfer_infid_full(
     overlap = tf_ketket_fid(psi_ideal, psi_actual)
     infid = 1 - overlap
     return infid
+
+
+@fid_reg_deco
+def swap_and_readout(
+    propagators: dict, instructions: dict, index, dims, params, n_eval=-1
+):
+    infids = []
+    psi_g = params["ground_state"]
+    psi_e = params["excited_state"]
+    a_rotated = params["a_rotated"]
+    d_max = params["cutoff_distance"]
+    psi_0 = params["psi_0"]
+    swap_cost = params["swap_cost"]
+    lindbladian = params["lindbladian"]
+
+    if lindbladian:
+        psi_g = tf_dm_to_vec(psi_g)
+        psi_e = tf_dm_to_vec(psi_e)
+
+    for gate, propagator in propagators.items():
+        psi_g_t = tf.matmul(propagator, psi_g)
+        psi_e_t = tf.matmul(propagator, psi_e)
+
+        if lindbladian:
+            psi_g_t = tf_vec_to_dm(psi_g_t)
+            psi_e_t = tf_vec_to_dm(psi_e_t)
+            alpha0 = tf.linalg.trace(tf.matmul(psi_g_t, a_rotated))
+            alpha1 = tf.linalg.trace(tf.matmul(psi_e_t, a_rotated))
+        else:
+            alpha0 = tf.matmul(
+                tf.matmul(tf.transpose(psi_g_t, conjugate=True), a_rotated), psi_g_t
+            )[0, 0]
+            alpha1 = tf.matmul(
+                tf.matmul(tf.transpose(psi_e_t, conjugate=True), a_rotated), psi_e_t
+            )[0, 0]
+
+        distance = tf.abs(alpha0 - alpha1)
+        iq_infid = tf.exp(-distance / d_max)
+
+        # calculate infidelity for swap
+        ideal_swap_gate = instructions[gate].get_ideal_gate(
+            dims, full_hilbert_space=True
+        )
+        psi_swap_ideal = tf.matmul(ideal_swap_gate, psi_0)
+        psi_swap_actual = tf.matmul(propagator, psi_0)
+        overlap = tf_ketket_fid(psi_swap_ideal, psi_swap_actual)
+        swap_infid = 1 - overlap
+
+        infid = iq_infid + swap_cost * swap_infid
+        infids.append(infid)
+
+    return tf.reduce_mean(infids)
