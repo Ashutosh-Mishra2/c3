@@ -595,7 +595,7 @@ def tf_propagation_lind(h0, hks, col_ops, cflds_t, dt, history=False):
     else:
         h = h0
 
-    h_id = tf.eye(h.shape[-1], batch_shape=[h.shape[0]], dtype=tf.complex128)
+    h_id = tf.eye(tf.shape(h)[-1], batch_shape=[tf.shape(h)[0]], dtype=tf.complex128)
     l_s = tf_kron(h, h_id)
     r_s = tf_kron(h_id, tf.linalg.matrix_transpose(h))
     lind_op = -1j * (l_s - r_s)

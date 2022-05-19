@@ -830,7 +830,7 @@ def IQ_plane_distance(
 
 @fid_reg_deco
 def state_transfer_infid_set_full(
-    propagators: dict, instructions: dict, index, dims, psi_0, proj=True, n_eval=-1
+    propagators: dict, instructions: dict, index, dims, params, proj=True, n_eval=-1
 ):
     """
     Mean state transfer infidelity.
@@ -851,10 +851,16 @@ def state_transfer_infid_set_full(
     tf.float
         State infidelity, averaged over the gates in propagators
     """
+    psi0 = params["psi0"]
+    lindbladian = params["lindbladian"]
+
     infids = []
     for gate, propagator in propagators.items():
         perfect_gate = instructions[gate].get_ideal_gate(dims, full_hilbert_space=True)
-        infid = state_transfer_infid_full(perfect_gate, propagator, index, dims, psi_0)
+        if lindbladian:
+            perfect_gate = tf_super(perfect_gate)
+            psi0 = tf_dm_to_vec(psi0)
+        infid = state_transfer_infid_full(perfect_gate, propagator, index, dims, psi0, lindbladian)
         # print("infid = ", infid)
         infids.append(infid)
     return tf.reduce_mean(infids)
@@ -862,7 +868,7 @@ def state_transfer_infid_set_full(
 
 @fid_reg_deco
 def state_transfer_infid_full(
-    ideal: np.ndarray, actual: tf.constant, index, dims, psi_0
+    ideal: np.ndarray, actual: tf.constant, index, dims, psi_0, lindbladian
 ):
     """
     Single gate state transfer infidelity. The dimensions of psi_0 and ideal need to be
@@ -886,9 +892,14 @@ def state_transfer_infid_full(
     """
     psi_ideal = tf.matmul(ideal, psi_0)
     psi_actual = tf.matmul(actual, psi_0)
-    overlap = tf_ketket_fid(psi_ideal, psi_actual)
+    if lindbladian:
+        psi_actual = tf_vec_to_dm(psi_actual)
+        psi_ideal = tf_vec_to_dm(psi_ideal)
+        overlap = tf.linalg.trace(tf.matmul(tf.transpose(psi_ideal, conjugate=True), psi_actual))
+    else: 
+        overlap = tf_ketket_fid(psi_ideal, psi_actual)
     infid = 1 - overlap
-    return infid
+    return tf.abs(infid)
 
 
 @fid_reg_deco

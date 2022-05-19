@@ -221,7 +221,7 @@ def tf_diff(l):  # noqa
     Running difference of the input list l. Equivalent to np.diff, except it
     returns the same shape by adding a 0 in the last entry.
     """
-    dim = l.shape[0] - 1
+    dim = tf.shape(l)[0] - 1
     diagonal = tf.constant([-1] * dim + [0], dtype=l.dtype)
     offdiagonal = tf.constant([1] * dim, dtype=l.dtype)
     proj = tf.linalg.diag(diagonal) + tf.linalg.diag(offdiagonal, k=1)
@@ -230,11 +230,11 @@ def tf_diff(l):  # noqa
 
 # MATRIX FUNCTIONS
 
-
+#TODO - change A.shape[: length-2] to tf.shape
 def Id_like(A):
     """Identity of the same size as A."""
-    length = len(A.shape)  # TF does not like negative pythonic indexing
-    return tf.eye(A.shape[length - 1], batch_shape=A.shape[: length - 2], dtype=A.dtype)
+    length = len(tf.shape(A))  # TF does not like negative pythonic indexing
+    return tf.eye(tf.shape(A)[length - 1], batch_shape=A.shape[: length - 2], dtype=A.dtype)
 
 
 #
@@ -248,11 +248,12 @@ def Id_like(A):
 
 def tf_kron(A, B):
     """Kronecker product of 2 matrices. Can be applied with batch dimmensions."""
-    dims = [A.shape[-2] * B.shape[-2], A.shape[-1] * B.shape[-1]]
+    dims = tf.convert_to_tensor([tf.shape(A)[-2] * tf.shape(B)[-2], tf.shape(A)[-1] * tf.shape(B)[-1]])
     res = tf.expand_dims(tf.expand_dims(A, -1), -3) * tf.expand_dims(
         tf.expand_dims(B, -2), -4
     )
-    dims = res.shape[:-4] + dims
+    if tf.size(tf.shape(res)) > 4:
+        dims = tf.concat([[tf.shape(res)[0]], dims], 0)
     return tf.reshape(res, dims)
 
 
@@ -280,7 +281,7 @@ def tf_super(A):
 
 def tf_state_to_dm(psi_ket):
     """Make a state vector into a density matrix."""
-    psi_ket = tf.reshape(psi_ket, [psi_ket.shape[0], 1])
+    psi_ket = tf.reshape(psi_ket, [tf.shape(psi_ket)[0], 1])
     psi_bra = tf.transpose(psi_ket)
     return tf.matmul(psi_ket, psi_bra)
 
@@ -293,7 +294,7 @@ def tf_dm_to_vec(dm):
 
 def tf_vec_to_dm(vec):
     """Convert a density vector to a density matrix."""
-    dim = tf.sqrt(tf.cast(vec.shape[0], tf.float32))
+    dim = tf.sqrt(tf.cast(tf.shape(vec)[0], tf.float32))
     return tf.transpose(tf.reshape(vec, [dim, dim]))
 
 
@@ -342,7 +343,7 @@ def tf_unitary_overlap(A: tf.Tensor, B: tf.Tensor, lvls: tf.Tensor = None) -> tf
     """
     try:
         if lvls is None:
-            lvls = tf.cast(B.shape[0], B.dtype)
+            lvls = tf.cast(tf.shape(B)[0], B.dtype)
         overlap = tf_abs_squared(
             tf.linalg.trace(tf.matmul(A, tf.linalg.adjoint(B))) / lvls
         )
@@ -358,7 +359,7 @@ def tf_unitary_overlap(A: tf.Tensor, B: tf.Tensor, lvls: tf.Tensor = None) -> tf
 def tf_superoper_unitary_overlap(A, B, lvls=None):
     # TODO: This is just wrong, probably.
     if lvls is None:
-        lvls = tf.sqrt(tf.cast(B.shape[0], B.dtype))
+        lvls = tf.sqrt(tf.cast(tf.shape(B)[0], B.dtype))
     overlap = (
         tf_abs(tf.sqrt(tf.linalg.trace(tf.matmul(A, tf.linalg.adjoint(B)))) / lvls) ** 2
     )
@@ -369,7 +370,7 @@ def tf_superoper_unitary_overlap(A, B, lvls=None):
 def tf_average_fidelity(A, B, lvls=None):
     """A very useful but badly named fidelity measure."""
     if lvls is None:
-        lvls = [tf.cast(B.shape[0], B.dtype)]
+        lvls = [tf.cast(tf.shape(B)[0], B.dtype)]
     Lambda = tf.matmul(tf.linalg.adjoint(A), B)
     return tf_super_to_fid(tf_super(Lambda), lvls)
 
@@ -377,7 +378,7 @@ def tf_average_fidelity(A, B, lvls=None):
 def tf_superoper_average_fidelity(A, B, lvls=None):
     """A very useful but badly named fidelity measure."""
     if lvls is None:
-        lvls = tf.sqrt(tf.cast(B.shape[0], B.dtype))
+        lvls = tf.sqrt(tf.cast(tf.shape(B)[0], B.dtype))
     lambda_super = tf.matmul(tf.linalg.adjoint(tf_project_to_comp(A, lvls, True)), B)
     return tf_super_to_fid(lambda_super, lvls)
 
@@ -396,11 +397,12 @@ def tf_choi_to_chi(U, dims=None):
 
     """
     if dims is None:
-        dims = [tf.sqrt(tf.cast(U.shape[0], U.dtype))]
+        dims = [tf.sqrt(tf.cast(tf.shape(U)[0], U.dtype))]
     B = tf.constant(pauli_basis([2] * len(dims)), dtype=tf.complex128)
     return tf.linalg.adjoint(B) @ U @ B
 
 
+#TODO - super_to_choi is not compatible with tf.function
 def super_to_choi(A):
     """
     Convert a super operator to choi representation.
@@ -408,7 +410,7 @@ def super_to_choi(A):
     """
     sqrt_shape = int(np.sqrt(A.shape[0]))
     A_choi = tf.reshape(
-        tf.transpose(tf.reshape(A, [sqrt_shape] * 4), perm=[3, 1, 2, 0]), A.shape
+        tf.transpose(tf.reshape(A, [sqrt_shape] * 4), perm=[3, 1, 2, 0]), tf.shape(A)
     )
     return A_choi
 
