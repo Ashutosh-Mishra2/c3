@@ -916,6 +916,10 @@ def swap_and_readout(
     lindbladian = params["lindbladian"]
 
     swap_cost = tf.constant(swap_cost, dtype=tf.complex128)
+    infid = tf.Variable(0.0, dtype=tf.complex128)
+    swap_propagator = tf.Variable(tf.eye(dims))
+    swap_propagator_ideal = tf.Variable(tf.eye(dims))
+    readout_propagator = tf.Variable(tf.eye(dims))
 
     if lindbladian:
         psi_g = tf_dm_to_vec(psi_g)
@@ -943,32 +947,34 @@ def swap_and_readout(
 
             distance = tf.abs(alpha0 - alpha1)
             iq_infid = tf.exp(-distance / d_max)
+            iq_infid = tf.cast(iq_infid, dtype=tf.complex128)
+            infid += iq_infid
 
         if "swap" in gate:
-            # calculate infidelity for swap
-            ideal_swap_gate = instructions[gate].get_ideal_gate(
-                dims, full_hilbert_space=True
-            )
+            swap_propagator = tf.matmul(propagator, swap_propagator)
+            swap_propagator_ideal = tf.matmul(instructions[gate].get_ideal_gate(
+                dims, full_hilbert_space=True), swap_propagator_ideal)
 
-            if lindbladian:
-                ideal_swap_gate = tf_super(ideal_swap_gate)
 
-                psi_swap_ideal = tf.matmul(ideal_swap_gate, psi_0)
-                psi_swap_actual = tf.matmul(propagator, psi_0)
+    # swap infideltiy
+    if lindbladian:
+        swap_propagator_ideal = tf_super(swap_propagator_ideal)
 
-                psi_swap_ideal = tf_vec_to_dm(psi_swap_ideal)
-                psi_swap_actual = tf_vec_to_dm(psi_swap_actual)
+        psi_swap_ideal = tf.matmul(swap_propagator_ideal, psi_0)
+        psi_swap_actual = tf.matmul(swap_propagator, psi_0)
 
-                overlap = tf.linalg.trace(tf.matmul(psi_swap_ideal, psi_swap_actual))
-            else:
-                psi_swap_ideal = tf.matmul(ideal_swap_gate, psi_0)
-                psi_swap_actual = tf.matmul(propagator, psi_0)
-                overlap = tf_ketket_fid(psi_swap_ideal, psi_swap_actual)
+        psi_swap_ideal = tf_vec_to_dm(psi_swap_ideal)
+        psi_swap_actual = tf_vec_to_dm(psi_swap_actual)
 
-            swap_infid = 1 - overlap
+        overlap = tf.linalg.trace(tf.matmul(psi_swap_ideal, psi_swap_actual))
+    else:
+        psi_swap_ideal = tf.matmul(swap_propagator_ideal, psi_0)
+        psi_swap_actual = tf.matmul(swap_propagator, psi_0)
+        overlap = tf_ketket_fid(psi_swap_ideal, psi_swap_actual)
 
-    iq_infid = tf.cast(iq_infid, dtype=tf.complex128)
-    infid = iq_infid + swap_cost * swap_infid
+    swap_infid = 1 - overlap
+    infid += swap_cost * swap_infid
+
     infids.append(infid)
 
     return tf.abs(tf.reduce_mean(infids))
