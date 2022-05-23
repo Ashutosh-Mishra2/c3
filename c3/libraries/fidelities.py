@@ -916,13 +916,13 @@ def swap_and_readout(
     lindbladian = params["lindbladian"]
 
     swap_cost = tf.constant(swap_cost, dtype=tf.complex128)
-    infid = tf.Variable(0.0, dtype=tf.complex128)
+    infid = tf.convert_to_tensor(0.0, dtype=tf.complex128)
     if lindbladian:
-        swap_propagator = tf.Variable(tf.eye(tf.square(tf.reduce_prod(dims))))
-        swap_propagator_ideal = tf.Variable(tf.eye(tf.square(tf.reduce_prod(dims))))
+        swap_propagator = tf.eye(tf.square(tf.reduce_prod(dims)), dtype=tf.complex128)
+        swap_propagator_ideal = tf.eye(tf.square(tf.reduce_prod(dims)), dtype=tf.complex128)
     else:
-        swap_propagator = tf.Variable(tf.eye(tf.reduce_prod(dims)))
-        swap_propagator_ideal = tf.Variable(tf.eye(tf.reduce_prod(dims)))
+        swap_propagator = tf.eye(tf.reduce_prod(dims))
+        swap_propagator_ideal = tf.eye(tf.reduce_prod(dims))
 
 
     if lindbladian:
@@ -956,14 +956,17 @@ def swap_and_readout(
 
         if "swap" in gate:
             swap_propagator = tf.matmul(propagator, swap_propagator)
-            swap_propagator_ideal = tf.matmul(instructions[gate].get_ideal_gate(
-                dims, full_hilbert_space=True), swap_propagator_ideal)
+            if lindbladian:
+                ideal_gate = tf_super(instructions[gate].get_ideal_gate(
+                    dims, full_hilbert_space=True))
+            else:
+                ideal_gate = instructions[gate].get_ideal_gate(
+                    dims, full_hilbert_space=True)
+            swap_propagator_ideal = tf.matmul(ideal_gate, swap_propagator_ideal)
 
 
     # swap infideltiy
     if lindbladian:
-        swap_propagator_ideal = tf_super(swap_propagator_ideal)
-
         psi_swap_ideal = tf.matmul(swap_propagator_ideal, psi_0)
         psi_swap_actual = tf.matmul(swap_propagator, psi_0)
 
