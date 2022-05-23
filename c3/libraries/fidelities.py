@@ -917,9 +917,13 @@ def swap_and_readout(
 
     swap_cost = tf.constant(swap_cost, dtype=tf.complex128)
     infid = tf.Variable(0.0, dtype=tf.complex128)
-    swap_propagator = tf.Variable(tf.eye(dims))
-    swap_propagator_ideal = tf.Variable(tf.eye(dims))
-    readout_propagator = tf.Variable(tf.eye(dims))
+    if lindbladian:
+        swap_propagator = tf.Variable(tf.eye(tf.square(tf.reduce_prod(dims))))
+        swap_propagator_ideal = tf.Variable(tf.eye(tf.square(tf.reduce_prod(dims))))
+    else:
+        swap_propagator = tf.Variable(tf.eye(tf.reduce_prod(dims)))
+        swap_propagator_ideal = tf.Variable(tf.eye(tf.reduce_prod(dims)))
+
 
     if lindbladian:
         psi_g = tf_dm_to_vec(psi_g)
