@@ -981,6 +981,7 @@ def swap_and_readout(
         overlap = tf_ketket_fid(psi_swap_ideal, psi_swap_actual)
 
     swap_infid = 1 - overlap
+    swap_infid = tf.cast(swap_infid, dtype=tf.complex128)
     infid += swap_cost * swap_infid
 
     infids.append(infid)
