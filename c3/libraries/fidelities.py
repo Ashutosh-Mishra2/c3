@@ -906,6 +906,7 @@ def state_transfer_infid_full(
 def swap_and_readout(
     propagators: dict, instructions: dict, index, dims, params, n_eval=-1
 ):
+    print("Calculating fidelity")
     infids = []
     psi_g = params["ground_state"]
     psi_e = params["excited_state"]
@@ -921,8 +922,8 @@ def swap_and_readout(
         swap_propagator = tf.eye(tf.square(tf.reduce_prod(dims)), dtype=tf.complex128)
         swap_propagator_ideal = tf.eye(tf.square(tf.reduce_prod(dims)), dtype=tf.complex128)
     else:
-        swap_propagator = tf.eye(tf.reduce_prod(dims))
-        swap_propagator_ideal = tf.eye(tf.reduce_prod(dims))
+        swap_propagator = tf.eye(tf.reduce_prod(dims), dtype=tf.complex128)
+        swap_propagator_ideal = tf.eye(tf.reduce_prod(dims), dtype=tf.complex128)
 
 
     if lindbladian:
