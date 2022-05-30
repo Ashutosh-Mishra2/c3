@@ -854,16 +854,24 @@ def state_transfer_infid_set_full(
     psi0 = params["psi0"]
     lindbladian = params["lindbladian"]
 
-    infids = []
+    if lindbladian:
+        swap_propagator = tf.eye(tf.square(tf.reduce_prod(dims)), dtype=tf.complex128)
+        swap_propagator_ideal = tf.eye(tf.square(tf.reduce_prod(dims)), dtype=tf.complex128)
+    else:
+        swap_propagator = tf.eye(tf.reduce_prod(dims), dtype=tf.complex128)
+        swap_propagator_ideal = tf.eye(tf.reduce_prod(dims), dtype=tf.complex128)
+
+
     for gate, propagator in propagators.items():
-        perfect_gate = instructions[gate].get_ideal_gate(dims, full_hilbert_space=True)
+        swap_propagator = tf.matmul(propagator, swap_propagator)
+        perfect_gate = instructions[gate].get_ideal_gate(dims, full_hilbert_space=True)        
         if lindbladian:
             perfect_gate = tf_super(perfect_gate)
             psi0 = tf_dm_to_vec(psi0)
-        infid = state_transfer_infid_full(perfect_gate, propagator, index, dims, psi0, lindbladian)
-        # print("infid = ", infid)
-        infids.append(infid)
-    return tf.reduce_mean(infids)
+        swap_propagator_ideal = tf.matmul(perfect_gate, swap_propagator_ideal)
+        
+    infid = state_transfer_infid_full(swap_propagator_ideal, swap_propagator, index, dims, psi0, lindbladian)
+    return infid
 
 
 @fid_reg_deco
