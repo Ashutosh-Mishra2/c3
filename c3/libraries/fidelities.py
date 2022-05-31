@@ -863,6 +863,7 @@ def state_transfer_infid_set_full(
 
 
     for gate, propagator in propagators.items():
+        print(gate)
         swap_propagator = tf.matmul(propagator, swap_propagator)
         perfect_gate = instructions[gate].get_ideal_gate(dims, full_hilbert_space=True)        
         if lindbladian:
@@ -903,7 +904,7 @@ def state_transfer_infid_full(
     if lindbladian:
         psi_actual = tf_vec_to_dm(psi_actual)
         psi_ideal = tf_vec_to_dm(psi_ideal)
-        overlap = tf.linalg.trace(tf.matmul(tf.transpose(psi_ideal, conjugate=True), psi_actual))
+        overlap = tf.linalg.trace(tf.matmul(psi_ideal, psi_actual))
     else: 
         overlap = tf_ketket_fid(psi_ideal, psi_actual)
     infid = 1 - overlap
