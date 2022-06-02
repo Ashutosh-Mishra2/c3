@@ -70,14 +70,41 @@ def rk4_step(h, psi, dt):
     return psi
 
 
+def rk4_lind_traj(h, psi, dt, time1, time2, relax_op, dec_op):
+    """
+    Calculates the single time step lindbladian evoultion
+    of a state vector.
+
+    Parameters:
+    h: Hamiltonian at given time step
+    psi: state vector
+    time1, time2: 1 iff the the relaxation, decoherence operators
+        are to be applied
+    relax_op: relaxion operator
+    dec_op: decoherence operator
+    """
+
+    psi = (
+        (1 - time1) * (1 - time2) * rk4_step(h, psi, dt)
+        + time1 * tf.linalg.matvec(relax_op, psi)
+        + time2 * tf.linalg.matvec(dec_op, psi)
+    )
+    return psi
+
+
 @state_deco
-def rk4_lind_traj(h, psi, dt, list_relax, list_dec, relax_op, dec_op):
-    for time1, time2 in list_relax, list_dec:
-        psi = (
-            (1 - time1) * (1 - time2) * rk4_step(h, psi, dt)
-            + time1 * tf.linalg.matvec(relax_op, psi)
-            + time2 * tf.linalg.matvec(dec_op, psi)
-        )
+def rk4_lind_states(model, generator, instruction):
+    list_rel, list_dec = model.precomp_tlist()
+    ii = 0
+    hs = get_hs_of_t_ts(model, generator, instruction)["Hs"]
+    dt = get_hs_of_t_ts(model, generator, instruction)["dt"]
+    psi = model.get_init_state()
+    relax_op, dec_op = model.get_Lindbladians()
+    for h in hs:
+        time1 = list_rel[ii]
+        time2 = list_dec[ii]
+        psi = rk4_lind_traj(h, psi, dt, time1, time2, relax_op, dec_op)
+        ii += 1
     return psi
 
 
