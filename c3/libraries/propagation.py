@@ -70,6 +70,17 @@ def rk4_step(h, psi, dt):
     return psi
 
 
+@state_deco
+def rk4_lind_traj(h, psi, dt, list_relax, list_dec, relax_op, dec_op):
+    for time1, time2 in list_relax, list_dec:
+        psi = (
+            (1 - time1) * (1 - time2) * rk4_step(h, psi, dt)
+            + time1 * tf.linalg.matvec(relax_op, psi)
+            + time2 * tf.linalg.matvec(dec_op, psi)
+        )
+    return psi
+
+
 def get_hs_of_t_ts(
     model: Model, gen: Generator, instr: Instruction, prop_res=1
 ) -> Dict:
