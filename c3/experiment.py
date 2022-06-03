@@ -685,72 +685,18 @@ class Experiment:
             gate_ids = instructions.keys()
 
         model.controllability = self.use_control_fields
+        collapse_ops = model.get_Lindbladians()
 
-        H_total = model.get_Hamiltonian()
+        for gate in gate_ids:
+            try:
+                instr = instructions[gate]
+            except KeyError:
+                raise Exception(
+                    f"C3:Error: Gate '{gate}' is not defined."
+                    f" Available gates are:\n {list(instructions.keys())}."
+                )
+            self.set_prop_method("lindblad_rk4")
+            result = self.propagation(model, generator, instr, collapse_ops, init_state)
 
-        # generate the total Hamiltonian
-        if model.controllability:
-            for gate in gate_ids:
-                try:
-                    instr = instructions[gate]
-                except KeyError:
-                    raise Exception(
-                        f"C3:Error: Gate '{gate}' is not defined."
-                        f" Available gates are:\n {list(instructions.keys())}."
-                    )
-
-                signal = generator.generate_signals(instr)
-                h0, hctrls = model.get_Hamiltonians()
-                signals = []
-                hks = []
-                for key in signal:
-                    signals.append(signal[key]["values"])
-                    ts = signal[key]["ts"]
-                    hks.append(hctrls[key])
-                signals = tf.cast(signals, tf.complex128)
-                hks = tf.cast(hks, tf.complex128)
-                for ii in range(tf.shape(signal[0])[0]):
-                    cf_t = []
-                    for fields in signals:
-                        cf_t.append(tf.cast(fields[ii], tf.complex128))
-
-                count = 0
-                while count < len(hks):
-                    H_total += cf_t[ii] * hks[ii]
-                    count += 1
-
-        else:
-            print(
-                "To check if the drift Hamiltonian is added multiple times for multiple gates sequence"
-            )
-            for gate in gate_ids:
-                try:
-                    instr = instructions[gate]
-                except KeyError:
-                    raise Exception(
-                        f"C3:Error: Gate '{gate}' is not defined."
-                        f" Available gates are:\n {list(instructions.keys())}."
-                    )
-
-                signal = generator.generate_signals(instr)
-
-                h0 = model.get_Hamiltonian(signal)
-                ts_list = [sig["ts"][1:] for sig in signal.values()]
-                ts = tf.constant(tf.math.reduce_mean(ts_list, axis=0))
-                hks = None
-                signals = None
-                if not np.all(
-                    tf.math.reduce_variance(ts_list, axis=0) < 1e-5 * (ts[1] - ts[0])
-                ):
-                    raise Exception("C3Error:Something with the times happend.")
-                if not np.all(
-                    tf.math.reduce_variance(ts[1:] - ts[:-1]) < 1e-5 * (ts[1] - ts[0])  # type: ignore
-                ):
-                    raise Exception("C3Error:Something with the times happend.")
-
-                H_total += h0
-
-        # collapse_ops = model.get_Lindbladians()
-
-        # define the differential equation
-        # func = self.propagation.lindblad_master_equation()
+        # TODO - fix this. We dont return result
+        return result

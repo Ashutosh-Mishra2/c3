@@ -5,6 +5,7 @@ from typing import Dict
 from c3.model import Model
 from c3.generator.generator import Generator
 from c3.signal.gates import Instruction
+from scipy import interpolate
 from c3.utils.tf_utils import (
     tf_kron,
     tf_matmul_left,
@@ -807,3 +808,114 @@ def tf_final_propagator_lind(h0, hks, col_ops, cflds_t, dt):
     lind_op += clp
     lind_total = tf.reduce_sum(lind_op * dt, axis=0)  # TODO- check the axis
     return tf.linalg.expm(lind_total)
+
+
+@state_deco
+def lindblad_rk4(
+    model: Model,
+    gen: Generator,
+    instr: Instruction,
+    collapse_ops: tf.Tensor,
+    init_state=None,
+) -> Dict:
+    Hs, ts, dt = Hs_of_t(model, gen, instr)
+    rhos = propagate_lind(Hs, collapse_ops, init_state, ts, dt)
+
+    return {"rho": rhos, "ts": ts}
+
+
+def Hs_of_t(model, gen, instr, interpolate_res=2):
+    if model.controllability:
+        Hs = get_Hs_of_t_cflds(model, gen, instr, interpolate_res)
+    else:
+        Hs = get_Hs_of_t_no_cflds(model, gen, instr, interpolate_res)
+    return Hs
+
+
+def get_Hs_of_t_cflds(model, gen, instr, interpolate_res):
+    Hs = []
+    ts = []
+    signal = gen.generate_signals(instr)
+    h0, hctrls = model.get_Hamiltonians()
+    signals = []
+    hks = []
+    for key in signal:
+        signals.append(signal[key]["values"])
+        ts = signal[key]["ts"]
+        hks.append(hctrls[key])
+
+    signals_interp = []
+    ts_interp = tf.linspace(ts[0], ts[-1], tf.shape(ts)[0] * interpolate_res)
+    for sig in signals:
+        sig_fun = interpolate.interp1d(ts, sig)
+        signals_interp.append(sig_fun(ts_interp))
+
+    cflds = tf.cast(signals_interp, tf.complex128)
+    hks = tf.cast(hks, tf.complex128)
+    for ii in range(tf.shape(cflds[0])[0]):
+        cf_t = []
+        for fields in cflds:
+            cf_t.append(tf.cast(fields[ii], tf.complex128))
+        Hs.append(sum_h0_hks(h0, hks, cf_t))
+
+    ts = tf.cast(ts, dtype=tf.complex128)
+    dt = ts[1] - ts[0]
+    return {"Hs": Hs, "ts": ts, "dt": dt}
+
+
+# TODO - change this function to include interpolation
+# TODO - Also make this compatible with tf.function by removing .numpy()
+def get_Hs_of_t_no_cflds(model, gen, instr, prop_res):
+    Hs = []
+    ts = []
+    gen.resolution = prop_res * gen.resolution
+    signal = gen.generate_signals(instr)
+    Hs = model.get_Hamiltonian(signal)
+    ts_list = [sig["ts"][1:] for sig in signal.values()]
+    ts = tf.constant(tf.math.reduce_mean(ts_list, axis=0))
+    if not np.all(tf.math.reduce_variance(ts_list, axis=0) < 1e-5 * (ts[1] - ts[0])):
+        raise Exception("C3Error:Something with the times happend.")
+    if not np.all(tf.math.reduce_variance(ts[1:] - ts[:-1]) < 1e-5 * (ts[1] - ts[0])):  # type: ignore
+        raise Exception("C3Error:Something with the times happend.")
+
+    dt = tf.constant(ts[1 * prop_res].numpy() - ts[0].numpy(), dtype=tf.complex128)
+    return {"Hs": Hs, "ts": ts[::prop_res], "dt": dt}
+
+
+def propagate_lind(Hs, col, rho, ts, dt):
+    rho_list = []
+    rho_t = rho
+    for index, t in enumerate(ts):
+        h = Hs[
+            2 * index : 2 * index + 2
+        ]  # TODO - check for the end point. Also for tf.function
+        rho_t = rk4_step_lind(lindblad_step, rho_t, h, col, dt)
+        rho_list.append(rho_t)
+    return rho_list
+
+
+def rk4_step_lind(func, rho, h, col, dt):
+    k1 = func(rho, h[0], col, dt)
+    k2 = func(rho + k1 / 2.0, h[1], col, dt)
+    k3 = func(rho + k2 / 2.0, h[1], dt)
+    k4 = func(rho + k3, h[2], dt)
+    rho += (k1 + 2 * k2 + 2 * k3 + k4) / 6.0
+    return rho
+
+
+def lindblad_step(rho, h, col_ops, dt):
+    del_rho = -1j * commutator(h, rho)
+    for col in col_ops:
+        del_rho += tf.matmul(tf.matmul(col, rho), tf.transpose(col, conjugate=True))
+        del_rho -= 0.5 * anticommutator(
+            tf.matmul(tf.transpose(col, conjugate=True), col), rho
+        )
+    return del_rho * dt
+
+
+def commutator(A, B):
+    return tf.matmul(A, B) - tf.matmul(B, A)
+
+
+def anticommutator(A, B):
+    return tf.matmul(A, B) + tf.matmul(B, A)
