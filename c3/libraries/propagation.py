@@ -1,6 +1,7 @@
 "A library for propagators and closely related functions"
 import numpy as np
 import tensorflow as tf
+import tensorflow_probability as tfp
 from typing import Dict
 from c3.model import Model
 from c3.generator.generator import Generator
@@ -848,11 +849,9 @@ def get_Hs_of_t_cflds(model, gen, instr, interpolate_res):
         hks.append(hctrls[key])
 
     signals_interp = []
-    dt = ts[1] - ts[0]
-    ts_interp = tf.linspace(ts[0], ts[-1] + dt, tf.shape(ts)[0] * interpolate_res + 1)
     for sig in signals:
-        sig_fun = interpolate.interp1d(ts, sig, fill_value="extrapolate")
-        signals_interp.append(sig_fun(ts_interp))
+        sig_new = interpolateSignal(ts, sig, interpolate_res)
+        signals_interp.append(sig_new)
 
     cflds = tf.cast(signals_interp, tf.complex128)
     hks = tf.cast(hks, tf.complex128)
@@ -885,11 +884,10 @@ def get_Hs_of_t_no_cflds(model, gen, instr, prop_res):
     dt = tf.constant(ts[1 * prop_res].numpy() - ts[0].numpy(), dtype=tf.complex128)
     return {"Hs": Hs, "ts": ts[::prop_res], "dt": dt}
 
-
 def propagate_lind(Hs, col, rho, ts, dt):
     rho_list = []
     rho_t = rho
-    for index, t in enumerate(ts):
+    for index in range(len(ts)):
         if index < len(Hs) / 2 - 1:
             h = Hs[
                 2 * index : 2 * index + 3
@@ -924,3 +922,16 @@ def commutator(A, B):
 
 def anticommutator(A, B):
     return tf.matmul(A, B) + tf.matmul(B, A)
+
+def interpolateSignal(ts, sig, interpolate_res):
+    dt = ts[1] - ts[0]
+    ts_interp = tf.linspace(ts[0], ts[-1] + dt, tf.shape(ts)[0] * interpolate_res + 1)
+    #sig_fun = interpolate.interp1d(ts, sig, fill_value="extrapolate")
+    #return sig_fun(ts_interp)
+    return tfp.math.interp_regular_1d_grid(
+        ts_interp,
+        ts[0],
+        ts[-1],
+        sig,
+        fill_value="extrapolate"
+    )
