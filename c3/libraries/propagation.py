@@ -818,7 +818,10 @@ def lindblad_rk4(
     collapse_ops: tf.Tensor,
     init_state=None,
 ) -> Dict:
-    Hs, ts, dt = Hs_of_t(model, gen, instr)
+    Hs_dict = Hs_of_t(model, gen, instr)
+    Hs = Hs_dict["Hs"]
+    ts = Hs_dict["ts"]
+    dt = Hs_dict["dt"]
     rhos = propagate_lind(Hs, collapse_ops, init_state, ts, dt)
 
     return {"rho": rhos, "ts": ts}
@@ -845,14 +848,15 @@ def get_Hs_of_t_cflds(model, gen, instr, interpolate_res):
         hks.append(hctrls[key])
 
     signals_interp = []
-    ts_interp = tf.linspace(ts[0], ts[-1], tf.shape(ts)[0] * interpolate_res)
+    dt = ts[1] - ts[0]
+    ts_interp = tf.linspace(ts[0], ts[-1] + dt, tf.shape(ts)[0] * interpolate_res + 1)
     for sig in signals:
-        sig_fun = interpolate.interp1d(ts, sig)
+        sig_fun = interpolate.interp1d(ts, sig, fill_value="extrapolate")
         signals_interp.append(sig_fun(ts_interp))
 
     cflds = tf.cast(signals_interp, tf.complex128)
     hks = tf.cast(hks, tf.complex128)
-    for ii in range(tf.shape(cflds[0])[0]):
+    for ii in range(tf.shape(cflds[0])[0]):  # TODO - Check which shape needs to be used
         cf_t = []
         for fields in cflds:
             cf_t.append(tf.cast(fields[ii], tf.complex128))
@@ -886,19 +890,20 @@ def propagate_lind(Hs, col, rho, ts, dt):
     rho_list = []
     rho_t = rho
     for index, t in enumerate(ts):
-        h = Hs[
-            2 * index : 2 * index + 2
-        ]  # TODO - check for the end point. Also for tf.function
-        rho_t = rk4_step_lind(lindblad_step, rho_t, h, col, dt)
-        rho_list.append(rho_t)
+        if index < len(Hs) / 2 - 1:
+            h = Hs[
+                2 * index : 2 * index + 3
+            ]  # TODO - check for the end point. Also for tf.function
+            rho_t = rk4_step_lind(lindblad_step, rho_t, h, col, dt)
+            rho_list.append(rho_t)
     return rho_list
 
 
 def rk4_step_lind(func, rho, h, col, dt):
     k1 = func(rho, h[0], col, dt)
     k2 = func(rho + k1 / 2.0, h[1], col, dt)
-    k3 = func(rho + k2 / 2.0, h[1], dt)
-    k4 = func(rho + k3, h[2], dt)
+    k3 = func(rho + k2 / 2.0, h[1], col, dt)
+    k4 = func(rho + k3, h[2], col, dt)
     rho += (k1 + 2 * k2 + 2 * k3 + k4) / 6.0
     return rho
 

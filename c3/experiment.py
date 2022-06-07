@@ -698,5 +698,6 @@ class Experiment:
             self.set_prop_method("lindblad_rk4")
             result = self.propagation(model, generator, instr, collapse_ops, init_state)
 
-        # TODO - fix this. We dont return result
+        # TODO - Add Frame rotation and dephasing strength
+        # TODO - Also add a loop for sequence of gates
         return result
