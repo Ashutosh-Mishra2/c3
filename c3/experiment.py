@@ -660,7 +660,7 @@ class Experiment:
         trace = np.trace(np.matmul(rho, oper))
         return [[np.real(trace)]]  # ,[np.imag(trace)]]
 
-    def solve_lindblad_ode(self, init_state):
+    def solve_lindblad_ode(self, init_state, sequence):
         """
         Solve the Lindblad master equation by integrating the differential
         equation of the density matrix
@@ -680,14 +680,17 @@ class Experiment:
 
         generator = self.pmap.generator
         instructions = self.pmap.instructions
-        gate_ids = self.opt_gates
-        if gate_ids is None:
-            gate_ids = instructions.keys()
-
         model.controllability = self.use_control_fields
         collapse_ops = model.get_Lindbladians()
 
-        for gate in gate_ids:
+        rho_init = init_state
+        ts_init = tf.constant(0.0, dtype=tf.complex128)
+        self.set_prop_method("lindblad_rk4")
+
+        rho_list = []
+        ts_list = []
+
+        for gate in sequence:
             try:
                 instr = instructions[gate]
             except KeyError:
@@ -695,9 +698,11 @@ class Experiment:
                     f"C3:Error: Gate '{gate}' is not defined."
                     f" Available gates are:\n {list(instructions.keys())}."
                 )
-            self.set_prop_method("lindblad_rk4")
-            result = self.propagation(model, generator, instr, collapse_ops, init_state)
+            result = self.propagation(model, generator, instr, collapse_ops, rho_init)
+            rho_list = rho_list + result["rho"]
+            ts_list = tf.concat([ts_list, tf.add(result["ts"], ts_init)], 0)
+            rho_init = result["rho"][-1]
+            ts_init = result["ts"][-1]
 
         # TODO - Add Frame rotation and dephasing strength
-        # TODO - Also add a loop for sequence of gates
-        return result
+        return {"rho": rho_list, "ts": ts_list}
