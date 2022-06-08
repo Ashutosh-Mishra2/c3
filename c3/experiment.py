@@ -706,3 +706,53 @@ class Experiment:
 
         # TODO - Add Frame rotation and dephasing strength
         return {"rho": rho_list, "ts": ts_list}
+
+
+    def solve_stochastic_ode(self, init_state, sequence, Num_shots):
+        """
+        Solve the Lindblad master equation by integrating the differential
+        equation of the density matrix
+
+        Returns
+        -------
+        List
+            A List of states for the time evolution.
+        """
+
+        model = self.pmap.model
+        if model.lindbladian:
+            raise Exception(
+                "model.lindbladian is True."
+                + "This method uses state vectors instead of density matrices."
+            )
+
+        generator = self.pmap.generator
+        instructions = self.pmap.instructions
+        model.controllability = self.use_control_fields
+        collapse_ops = model.get_Lindbladians()
+
+        psi_init = init_state
+        ts_init = tf.constant(0.0, dtype=tf.complex128)
+        self.set_prop_method("stochastic_schrodinger_rk4")
+
+        psi_shots = []
+        for num in Num_shots:
+            psi_list = []
+            ts_list = []
+            for gate in sequence:
+                try:
+                    instr = instructions[gate]
+                except KeyError:
+                    raise Exception(
+                        f"C3:Error: Gate '{gate}' is not defined."
+                        f" Available gates are:\n {list(instructions.keys())}."
+                    )
+                result = self.propagation(model, generator, instr, collapse_ops, psi_init)
+                psi_list = psi_list + result["psi"]
+                ts_list = tf.concat([ts_list, tf.add(result["ts"], ts_init)], 0)
+                psi_init = result["psi"][-1]
+                ts_init = result["ts"][-1]
+            psi_shots.append(psi_list)
+
+        # TODO - Add Frame rotation and dephasing strength
+        return {"psi": psi_shots, "ts": ts_list}

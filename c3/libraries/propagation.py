@@ -72,44 +72,6 @@ def rk4_step(h, psi, dt):
     return psi
 
 
-def rk4_lind_traj(h, psi, dt, time1, time2, relax_op, dec_op):
-    """
-    Calculates the single time step lindbladian evoultion
-    of a state vector.
-
-    Parameters:
-    h: Hamiltonian at given time step
-    psi: state vector
-    time1, time2: 1 iff the the relaxation, decoherence operators
-        are to be applied
-    relax_op: relaxion operator
-    dec_op: decoherence operator
-    """
-
-    psi = (
-        (1 - time1) * (1 - time2) * rk4_step(h, psi, dt)
-        + time1 * tf.linalg.matvec(relax_op, psi)
-        + time2 * tf.linalg.matvec(dec_op, psi)
-    )
-    return psi
-
-
-@state_deco
-def rk4_lind_states(model, generator, instruction):
-    list_rel, list_dec = model.precomp_tlist()
-    ii = 0
-    hs = get_hs_of_t_ts(model, generator, instruction)["Hs"]
-    dt = get_hs_of_t_ts(model, generator, instruction)["dt"]
-    psi = model.get_init_state()
-    relax_op, dec_op = model.get_Lindbladians()
-    for h in hs:
-        time1 = list_rel[ii]
-        time2 = list_dec[ii]
-        psi = rk4_lind_traj(h, psi, dt, time1, time2, relax_op, dec_op)
-        ii += 1
-    return psi
-
-
 def get_hs_of_t_ts(
     model: Model, gen: Generator, instr: Instruction, prop_res=1
 ) -> Dict:
@@ -935,3 +897,47 @@ def interpolateSignal(ts, sig, interpolate_res):
         sig,
         fill_value="extrapolate"
     )
+
+
+@state_deco
+def stochastic_schrodinger_rk4(model, generator, instruction):
+    list_rel, list_dec = precompute_dissipation_prob(model)
+    ii = 0
+    hs_of_t_ts = get_hs_of_t_ts(model, generator, instruction) 
+    hs = hs_of_t_ts["Hs"]
+    ts = hs_of_t_ts["ts"]
+    dt = hs_of_t_ts["dt"]
+    psi = model.get_init_state()
+    relax_op, dec_op = model.get_Lindbladians() # TODO - This returns total lindbladian for a system not seperate
+    psi_list = []
+    for h in hs:
+        time1 = list_rel[ii]
+        time2 = list_dec[ii]
+        psi = rk4_lind_traj(h, psi, dt, time1, time2, relax_op, dec_op)
+        psi_list.append(psi)
+        ii += 1
+    return {"psi":psi_list, "ts": ts}
+
+def rk4_lind_traj(h, psi, dt, time1, time2, relax_op, dec_op):
+    """
+    Calculates the single time step lindbladian evoultion
+    of a state vector.
+
+    Parameters:
+    h: Hamiltonian at given time step
+    psi: state vector
+    time1, time2: 1 iff the the relaxation, decoherence operators
+        are to be applied
+    relax_op: relaxion operator
+    dec_op: decoherence operator
+    """
+
+    psi = (
+        (1 - time1) * (1 - time2) * rk4_step(h, psi, dt)
+        + time1 * tf.linalg.matvec(relax_op, psi)
+        + time2 * tf.linalg.matvec(dec_op, psi)
+    )
+    return psi
+
+def precompute_dissipation_prob(model):
+    
