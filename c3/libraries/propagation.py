@@ -901,15 +901,15 @@ def interpolateSignal(ts, sig, interpolate_res):
 
 @state_deco
 def stochastic_schrodinger_rk4(model, generator, instruction):
-    list_rel, list_dec = precompute_dissipation_prob(model)
-    ii = 0
-    hs_of_t_ts = get_hs_of_t_ts(model, generator, instruction) 
+    hs_of_t_ts = Hs_of_t(model, generator, instruction) 
     hs = hs_of_t_ts["Hs"]
     ts = hs_of_t_ts["ts"]
     dt = hs_of_t_ts["dt"]
+    list_rel, list_dec = precompute_dissipation_probs(model, ts)
     psi = model.get_init_state()
     relax_op, dec_op = model.get_Lindbladians() # TODO - This returns total lindbladian for a system not seperate
     psi_list = []
+    ii = 0
     for h in hs:
         time1 = list_rel[ii]
         time2 = list_dec[ii]
@@ -939,5 +939,42 @@ def rk4_lind_traj(h, psi, dt, time1, time2, relax_op, dec_op):
     )
     return psi
 
-def precompute_dissipation_prob(model):
+def precompute_dissipation_probs(model, ts):
+    t1s = {}
+    t2s = {}
+    temps = {}
+
+    # TODO - correct the probability values
+    pT1 = {}
+    pT2 = {}
+    pTemp = {}
     
+    for key in model.subsystems:
+        try:
+            t1s[key] = model.subsystems[key].params["t1"].get_value()
+            pT1[key] = 1/t1s[key]
+        except KeyError:
+            raise Exception(
+                f"Error: T1 for '{key}' is not defined."
+            )
+        try:
+            t2s[key] = model.subsystems[key].params["t2star"].get_value()
+            pT2[key] = 1/t2s[key]
+        except KeyError:
+            raise Exception(
+                f"Error: T2Star for '{key}' is not defined."
+            )
+
+        try:
+            temps[key] = model.subsystems[key].params["temp"].get_value()
+            pTemp[key] = 1/temps[key]
+        except KeyError:
+            raise Exception(
+                f"Error: Temp for '{key}' is not defined."
+            )
+
+    plists = {}
+    for key in model.subsystems:
+        plists[key] = {}
+        plists[key]["T1"] =  
+     
