@@ -20,7 +20,7 @@ state_provider = dict()
 
 
 def step_vonNeumann_psi(psi, h, dt):
-    return -1j * dt * tf.linalg.matvec(h, psi)
+    return -1j * dt * tf.linalg.matmul(h, psi)
 
 
 def unitary_deco(func):
@@ -900,25 +900,51 @@ def interpolateSignal(ts, sig, interpolate_res):
 
 
 @state_deco
-def stochastic_schrodinger_rk4(model, generator, instruction):
+def stochastic_schrodinger_rk4(model, generator, instruction, psi_init):
     hs_of_t_ts = Hs_of_t(model, generator, instruction) 
     hs = hs_of_t_ts["Hs"]
     ts = hs_of_t_ts["ts"]
     dt = hs_of_t_ts["dt"]
-    list_rel, list_dec = precompute_dissipation_probs(model, ts)
-    psi = model.get_init_state()
-    relax_op, dec_op = model.get_Lindbladians() # TODO - This returns total lindbladian for a system not seperate
+    plist = precompute_dissipation_probs(model, ts)
+    psi = psi_init
     psi_list = []
-    ii = 0
-    for h in hs:
-        time1 = list_rel[ii]
-        time2 = list_dec[ii]
-        psi = rk4_lind_traj(h, psi, dt, time1, time2, relax_op, dec_op)
-        psi_list.append(psi)
-        ii += 1
+
+    collapse_ops = {}
+
+    for key in model.subsystems:
+        collapse_ops[key] = {}
+        collapse_ops[key]["relax"] = tf.cast(model.subsystems[key].collapse_ops["t1"], dtype=tf.complex128)
+        collapse_ops[key]["dec"] = tf.cast(model.subsystems[key].collapse_ops["t2star"], dtype=tf.complex128)
+        collapse_ops[key]["temp"] = tf.cast(model.subsystems[key].collapse_ops["temp"], dtype=tf.complex128)
+
+
+    for index in range(len(ts)):
+        if index < len(hs) / 2 - 1:
+            relax_op_list = []
+            dec_op_list = []
+            temp_op_list = []
+            coherent_ev_flag = 1
+            for key in model.subsystems:
+                time1 = plist[key]["t1"][index]
+                time2 = plist[key]["t2star"][index]
+                time_temp = plist[key]["temp"][index]
+
+                relax_op = time1 * collapse_ops[key]["relax"]
+                dec_op = time2 * collapse_ops[key]["dec"]
+                temp_op = time_temp * collapse_ops[key]["temp"]
+
+                relax_op_list.append(relax_op)
+                dec_op_list.append(dec_op)
+                temp_op_list.append(temp_op)
+                
+                coherent_ev_flag = coherent_ev_flag * (1 - time1) * (1 - time2) * (1 - time_temp)
+
+            h = hs[2 * index : 2 * index + 3]
+            psi = rk4_lind_traj(h, psi, dt, relax_op_list, dec_op_list, temp_op_list, coherent_ev_flag)
+            psi_list.append(psi)
     return {"psi":psi_list, "ts": ts}
 
-def rk4_lind_traj(h, psi, dt, time1, time2, relax_op, dec_op):
+def rk4_lind_traj(h, psi, dt, relax_ops, dec_ops, temp_ops, coherent_ev_flag):
     """
     Calculates the single time step lindbladian evoultion
     of a state vector.
@@ -931,13 +957,16 @@ def rk4_lind_traj(h, psi, dt, time1, time2, relax_op, dec_op):
     relax_op: relaxion operator
     dec_op: decoherence operator
     """
-
-    psi = (
-        (1 - time1) * (1 - time2) * rk4_step(h, psi, dt)
-        + time1 * tf.linalg.matvec(relax_op, psi)
-        + time2 * tf.linalg.matvec(dec_op, psi)
-    )
-    return psi
+    # TODO - check for normalization of the states
+    psi_new = coherent_ev_flag * rk4_step(h, psi, dt)
+    for i in range(len(relax_ops)):
+        psi_new = (
+                    psi_new 
+                    +  tf.linalg.matmul(relax_ops[i],psi)
+                    + tf.linalg.matmul(dec_ops[i],psi)
+                    + tf.linalg.matmul(temp_ops[i],psi)
+                )
+    return psi_new
 
 def precompute_dissipation_probs(model, ts):
     t1s = {}
@@ -974,7 +1003,16 @@ def precompute_dissipation_probs(model, ts):
             )
 
     plists = {}
+    g = tf.random.get_global_generator()
     for key in model.subsystems:
         plists[key] = {}
-        plists[key]["T1"] =  
+        temp = g.uniform(shape=[len(ts)], dtype=tf.float64)
+        plists[key]["t1"] =  tf.cast(tf.floor(temp/pT1[key]), dtype=tf.complex128)
+        temp = g.uniform(shape=[len(ts)], dtype=tf.float64)
+        plists[key]["t2star"] =  tf.cast(tf.floor(temp/pT2[key]), dtype=tf.complex128)
+        temp = g.uniform(shape=[len(ts)], dtype=tf.float64)
+        plists[key]["temp"] =  tf.cast(tf.floor(temp/pTemp[key]), dtype=tf.complex128)
+
+    return plists
+        
      

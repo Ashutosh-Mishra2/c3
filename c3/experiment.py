@@ -736,7 +736,7 @@ class Experiment:
         self.set_prop_method("stochastic_schrodinger_rk4")
 
         psi_shots = []
-        for num in Num_shots:
+        for num in range(Num_shots):
             psi_list = []
             ts_list = []
             for gate in sequence:
@@ -747,7 +747,7 @@ class Experiment:
                         f"C3:Error: Gate '{gate}' is not defined."
                         f" Available gates are:\n {list(instructions.keys())}."
                     )
-                result = self.propagation(model, generator, instr, collapse_ops, psi_init)
+                result = self.propagation(model, generator, instr, psi_init)
                 psi_list = psi_list + result["psi"]
                 ts_list = tf.concat([ts_list, tf.add(result["ts"], ts_init)], 0)
                 psi_init = result["psi"][-1]
