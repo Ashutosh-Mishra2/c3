@@ -739,6 +739,8 @@ class Experiment:
         for num in range(Num_shots):
             psi_list = []
             ts_list = []
+            psi_init = init_state
+            ts_init = tf.constant(0.0, dtype=tf.complex128)
             for gate in sequence:
                 try:
                     instr = instructions[gate]
