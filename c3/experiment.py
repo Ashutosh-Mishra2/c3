@@ -729,7 +729,6 @@ class Experiment:
         generator = self.pmap.generator
         instructions = self.pmap.instructions
         model.controllability = self.use_control_fields
-        collapse_ops = model.get_Lindbladians()
 
         psi_init = init_state
         ts_init = tf.constant(0.0, dtype=tf.complex128)

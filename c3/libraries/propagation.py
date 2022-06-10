@@ -900,17 +900,21 @@ def interpolateSignal(ts, sig, interpolate_res):
 
 
 @state_deco
-def stochastic_schrodinger_rk4(model, generator, instruction, psi_init):
+def stochastic_schrodinger_rk4(
+    model: Model,
+    generator: Generator, 
+    instruction: Instruction, 
+    psi_init: tf.Tensor
+) -> Dict:
     hs_of_t_ts = Hs_of_t(model, generator, instruction) 
     hs = hs_of_t_ts["Hs"]
     ts = hs_of_t_ts["ts"]
     dt = hs_of_t_ts["dt"]
+    # TODO - check these probabilites. They dont turn 1 for short T1 and T2 times
     plist = precompute_dissipation_probs(model, ts)
-    psi = psi_init
-    psi_list = []
+
 
     collapse_ops = {}
-
     for key in model.subsystems:
         collapse_ops[key] = {}
         collapse_ops[key]["relax"] = tf.cast(model.subsystems[key].collapse_ops["t1"], dtype=tf.complex128)
@@ -918,6 +922,8 @@ def stochastic_schrodinger_rk4(model, generator, instruction, psi_init):
         collapse_ops[key]["temp"] = tf.cast(model.subsystems[key].collapse_ops["temp"], dtype=tf.complex128)
 
 
+    psi = psi_init
+    psi_list = []
     for index in range(len(ts)):
         if index < len(hs) / 2 - 1:
             relax_op_list = []
@@ -938,6 +944,8 @@ def stochastic_schrodinger_rk4(model, generator, instruction, psi_init):
                 temp_op_list.append(temp_op)
                 
                 coherent_ev_flag = coherent_ev_flag * (1 - time1) * (1 - time2) * (1 - time_temp)
+            if coherent_ev_flag == 0:
+                print(coherent_ev_flag)
 
             h = hs[2 * index : 2 * index + 3]
             psi = rk4_lind_traj(h, psi, dt, relax_op_list, dec_op_list, temp_op_list, coherent_ev_flag)
@@ -962,7 +970,7 @@ def rk4_lind_traj(h, psi, dt, relax_ops, dec_ops, temp_ops, coherent_ev_flag):
     for i in range(len(relax_ops)):
         psi_new = (
                     psi_new 
-                    +  tf.linalg.matmul(relax_ops[i],psi)
+                    + tf.linalg.matmul(relax_ops[i],psi)
                     + tf.linalg.matmul(dec_ops[i],psi)
                     + tf.linalg.matmul(temp_ops[i],psi)
                 )
@@ -1008,6 +1016,7 @@ def precompute_dissipation_probs(model, ts):
         plists[key] = {}
         temp = g.uniform(shape=[len(ts)], dtype=tf.float64)
         plists[key]["t1"] =  tf.cast(tf.floor(temp/pT1[key]), dtype=tf.complex128)
+        print([i for i in plists[key]["t1"] if i == 1])
         temp = g.uniform(shape=[len(ts)], dtype=tf.float64)
         plists[key]["t2star"] =  tf.cast(tf.floor(temp/pT2[key]), dtype=tf.complex128)
         temp = g.uniform(shape=[len(ts)], dtype=tf.float64)
