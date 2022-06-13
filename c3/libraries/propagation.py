@@ -911,7 +911,7 @@ def stochastic_schrodinger_rk4(
     ts = hs_of_t_ts["ts"]
     dt = hs_of_t_ts["dt"]
     # TODO - check these probabilites. They dont turn 1 for short T1 and T2 times
-    plist = precompute_dissipation_probs(model, ts)
+    plist = precompute_dissipation_probs(model, ts, dt)
 
 
     collapse_ops = {}
@@ -944,8 +944,8 @@ def stochastic_schrodinger_rk4(
                 temp_op_list.append(temp_op)
                 
                 coherent_ev_flag = coherent_ev_flag * (1 - time1) * (1 - time2) * (1 - time_temp)
-            if coherent_ev_flag == 0:
-                print(coherent_ev_flag)
+            #if coherent_ev_flag == 0:
+            #    print(coherent_ev_flag)
 
             h = hs[2 * index : 2 * index + 3]
             psi = rk4_lind_traj(h, psi, dt, relax_op_list, dec_op_list, temp_op_list, coherent_ev_flag)
@@ -966,6 +966,7 @@ def rk4_lind_traj(h, psi, dt, relax_ops, dec_ops, temp_ops, coherent_ev_flag):
     dec_op: decoherence operator
     """
     # TODO - check for normalization of the states
+    # TODO - What happens if two of them become one at the same time
     psi_new = coherent_ev_flag * rk4_step(h, psi, dt)
     for i in range(len(relax_ops)):
         psi_new = (
@@ -976,7 +977,7 @@ def rk4_lind_traj(h, psi, dt, relax_ops, dec_ops, temp_ops, coherent_ev_flag):
                 )
     return psi_new
 
-def precompute_dissipation_probs(model, ts):
+def precompute_dissipation_probs(model, ts, dt):
     t1s = {}
     t2s = {}
     temps = {}
@@ -985,18 +986,19 @@ def precompute_dissipation_probs(model, ts):
     pT1 = {}
     pT2 = {}
     pTemp = {}
-    
+
+    dt = tf.cast(dt, dtype=tf.float64)
     for key in model.subsystems:
         try:
             t1s[key] = model.subsystems[key].params["t1"].get_value()
-            pT1[key] = 1/t1s[key]
+            pT1[key] = 1/t1s[key] * dt
         except KeyError:
             raise Exception(
                 f"Error: T1 for '{key}' is not defined."
             )
         try:
             t2s[key] = model.subsystems[key].params["t2star"].get_value()
-            pT2[key] = 1/t2s[key]
+            pT2[key] = 1/t2s[key] * dt
         except KeyError:
             raise Exception(
                 f"Error: T2Star for '{key}' is not defined."
@@ -1004,7 +1006,7 @@ def precompute_dissipation_probs(model, ts):
 
         try:
             temps[key] = model.subsystems[key].params["temp"].get_value()
-            pTemp[key] = 1/temps[key]
+            pTemp[key] = 1/temps[key] * dt
         except KeyError:
             raise Exception(
                 f"Error: Temp for '{key}' is not defined."
@@ -1014,13 +1016,34 @@ def precompute_dissipation_probs(model, ts):
     g = tf.random.get_global_generator()
     for key in model.subsystems:
         plists[key] = {}
-        temp = g.uniform(shape=[len(ts)], dtype=tf.float64)
-        plists[key]["t1"] =  tf.cast(tf.floor(temp/pT1[key]), dtype=tf.complex128)
-        print([i for i in plists[key]["t1"] if i == 1])
-        temp = g.uniform(shape=[len(ts)], dtype=tf.float64)
-        plists[key]["t2star"] =  tf.cast(tf.floor(temp/pT2[key]), dtype=tf.complex128)
-        temp = g.uniform(shape=[len(ts)], dtype=tf.float64)
-        plists[key]["temp"] =  tf.cast(tf.floor(temp/pTemp[key]), dtype=tf.complex128)
+        temp1 = g.uniform(shape=[len(ts)], dtype=tf.float64)
+        temp2 = g.uniform(shape=[len(ts)], dtype=tf.float64)
+        tempt = g.uniform(shape=[len(ts)], dtype=tf.float64)
+        
+        plists[key]["t1"] = []
+        plists[key]["t2star"] = []
+        plists[key]["temp"] = []
+
+        for i in range(len(ts)):
+            if temp1[i] < pT1[key]:
+                plists[key]["t1"].append(1)
+            else:
+                plists[key]["t1"].append(0)
+
+            if temp2[i] < pT2[key]:
+                plists[key]["t2star"].append(1)
+            else:
+                plists[key]["t2star"].append(0)
+
+            if tempt[i] < pTemp[key]:
+                plists[key]["temp"].append(1)
+            else:
+                plists[key]["temp"].append(0)
+
+
+        plists[key]["t1"] =  tf.constant(plists[key]["t1"], dtype=tf.complex128)
+        plists[key]["t2star"] =  tf.cast(plists[key]["t2star"], dtype=tf.complex128)
+        plists[key]["temp"] =  tf.cast(plists[key]["temp"], dtype=tf.complex128)
 
     return plists
         

@@ -736,24 +736,30 @@ class Experiment:
 
         psi_shots = []
         for num in range(Num_shots):
-            psi_list = []
-            ts_list = []
-            psi_init = init_state
-            ts_init = tf.constant(0.0, dtype=tf.complex128)
-            for gate in sequence:
-                try:
-                    instr = instructions[gate]
-                except KeyError:
-                    raise Exception(
-                        f"C3:Error: Gate '{gate}' is not defined."
-                        f" Available gates are:\n {list(instructions.keys())}."
-                    )
-                result = self.propagation(model, generator, instr, psi_init)
-                psi_list = psi_list + result["psi"]
-                ts_list = tf.concat([ts_list, tf.add(result["ts"], ts_init)], 0)
-                psi_init = result["psi"][-1]
-                ts_init = result["ts"][-1]
+            psi_list, ts_list = self.single_stochastic_run(sequence, init_state)
             psi_shots.append(psi_list)
-
         # TODO - Add Frame rotation and dephasing strength
         return {"psi": psi_shots, "ts": ts_list}
+    
+    def single_stochastic_run(self, sequence, init_state):
+        instructions = self.pmap.instructions
+        model = self.pmap.model
+        generator = self.pmap.generator
+        psi_list = []
+        ts_list = []
+        psi_init = init_state
+        ts_init = tf.constant(0.0, dtype=tf.complex128)
+        for gate in sequence:
+            try:
+                instr = instructions[gate]
+            except KeyError:
+                raise Exception(
+                    f"C3:Error: Gate '{gate}' is not defined."
+                    f" Available gates are:\n {list(instructions.keys())}."
+                )
+            result = self.propagation(model, generator, instr, psi_init)
+            psi_list = psi_list + result["psi"]
+            ts_list = tf.concat([ts_list, tf.add(result["ts"], ts_init)], 0)
+            psi_init = result["psi"][-1]
+            ts_init = result["ts"][-1]
+        return psi_list, ts_list
