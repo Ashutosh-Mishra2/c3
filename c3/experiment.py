@@ -699,13 +699,13 @@ class Experiment:
                     f" Available gates are:\n {list(instructions.keys())}."
                 )
             result = self.propagation(model, generator, instr, collapse_ops, rho_init)
-            rho_list = rho_list + result["rho"]
+            rho_list = rho_list + result["states"]
             ts_list = tf.concat([ts_list, tf.add(result["ts"], ts_init)], 0)
-            rho_init = result["rho"][-1]
+            rho_init = result["states"][-1]
             ts_init = result["ts"][-1]
 
         # TODO - Add Frame rotation and dephasing strength
-        return {"rho": rho_list, "ts": ts_list}
+        return {"states": rho_list, "ts": ts_list}
 
 
     def solve_stochastic_ode(self, init_state, sequence, Num_shots):
@@ -739,7 +739,7 @@ class Experiment:
             psi_list, ts_list = self.single_stochastic_run(sequence, init_state)
             psi_shots.append(psi_list)
         # TODO - Add Frame rotation and dephasing strength
-        return {"psi": psi_shots, "ts": ts_list}
+        return {"states": psi_shots, "ts": ts_list}
     
     def single_stochastic_run(self, sequence, init_state):
         instructions = self.pmap.instructions
@@ -758,8 +758,8 @@ class Experiment:
                     f" Available gates are:\n {list(instructions.keys())}."
                 )
             result = self.propagation(model, generator, instr, psi_init)
-            psi_list = psi_list + result["psi"]
+            psi_list = psi_list + result["states"]
             ts_list = tf.concat([ts_list, tf.add(result["ts"], ts_init)], 0)
-            psi_init = result["psi"][-1]
+            psi_init = result["states"][-1]
             ts_init = result["ts"][-1]
         return psi_list, ts_list

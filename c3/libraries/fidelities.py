@@ -1,5 +1,6 @@
 """Library of fidelity functions."""
 
+from turtle import distance
 import numpy as np
 import tensorflow as tf
 from typing import List, Dict
@@ -996,3 +997,21 @@ def swap_and_readout(
     infids.append(infid)
 
     return tf.abs(tf.reduce_mean(infids))
+
+
+@fid_reg_deco
+def state_transfer_from_states(
+    states: dict, index, dims, params, n_eval=-1
+):
+    infids = []
+    psi_0 = params["psi_0"]
+    overlap = calculateStateOverlap(states[-1], psi_0)
+    infid = 1 - overlap
+    infids.append(infid)
+    return tf.reduce_max(tf.math.real(infids))
+
+def calculateStateOverlap(psi1, psi2):
+    if tf.shape(psi1)[0] == tf.shape(psi1)[1]:
+        return tf.linalg.trace(tf.matmul(tf.transpose(psi1, conjugate=True), psi2))
+    else:
+        return tf_ketket_fid(psi1, psi2)

@@ -57,6 +57,9 @@ class OptimalControl(Optimizer):
         include_model=False,
         logger=None,
         fid_func_kwargs={},
+        states_solver=False,
+        init_state=None,
+        sequence=None
     ) -> None:
         if type(algorithm) is str:
             algorithm = algorithms[algorithm]
@@ -78,6 +81,9 @@ class OptimalControl(Optimizer):
         self.interactive = interactive
         self.update_model = include_model
         self.fid_func_kwargs = fid_func_kwargs
+        self.state_solver = states_solver
+        self.init_state = init_state
+        self.sequence = sequence
         self.run = (
             self.optimize_controls
         )  # Alias the legacy name for the method running the
@@ -173,15 +179,36 @@ class OptimalControl(Optimizer):
         """
         self.pmap.set_parameters_scaled(current_params)
         dims = self.pmap.model.dims
-        propagators = self.exp.compute_propagators()
+        if self.state_solver:
+            if self.init_state == None:
+                raise Exception(
+                    "Specify the initial state for the evolution"
+                )
+            if self.sequence == None:
+                raise Exception(
+                    "Specify the sequence of gates for evolution"
+                )
+            result = self.exp.solve_lindblad_ode(self.init_state, self.sequence)
+            states = result["states"]
 
-        goal = self.fid_func(
-            propagators=propagators,
-            instructions=self.pmap.instructions,
-            index=self.index,
-            dims=dims,
-            n_eval=self.evaluation + 1,
-            **self.fid_func_kwargs,
-        )
-        self.evaluation += 1
+            goal = self.fid_func(
+                states=states,
+                index=self.index,
+                dims=dims,
+                n_eval=self.evaluation + 1,
+                **self.fid_func_kwargs,
+            )
+            self.evaluation += 1
+        else:
+            propagators = self.exp.compute_propagators()
+
+            goal = self.fid_func(
+                propagators=propagators,
+                instructions=self.pmap.instructions,
+                index=self.index,
+                dims=dims,
+                n_eval=self.evaluation + 1,
+                **self.fid_func_kwargs,
+            )
+            self.evaluation += 1
         return goal

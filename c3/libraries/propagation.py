@@ -787,7 +787,7 @@ def lindblad_rk4(
     dt = Hs_dict["dt"]
     rhos = propagate_lind(Hs, collapse_ops, init_state, ts, dt)
 
-    return {"rho": rhos, "ts": ts}
+    return {"states": rhos, "ts": ts}
 
 
 def Hs_of_t(model, gen, instr, interpolate_res=2):
@@ -858,7 +858,7 @@ def propagate_lind(Hs, col, rho, ts, dt):
             rho_list.append(rho_t)
     return rho_list
 
-
+# TODO - make a RK45 algorithm with interpolation
 def rk4_step_lind(func, rho, h, col, dt):
     k1 = func(rho, h[0], col, dt)
     k2 = func(rho + k1 / 2.0, h[1], col, dt)
@@ -950,7 +950,7 @@ def stochastic_schrodinger_rk4(
             h = hs[2 * index : 2 * index + 3]
             psi = rk4_lind_traj(h, psi, dt, relax_op_list, dec_op_list, temp_op_list, coherent_ev_flag)
             psi_list.append(psi)
-    return {"psi":psi_list, "ts": ts}
+    return {"states":psi_list, "ts": ts}
 
 def rk4_lind_traj(h, psi, dt, relax_ops, dec_ops, temp_ops, coherent_ev_flag):
     """
