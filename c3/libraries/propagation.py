@@ -689,7 +689,6 @@ def get_Hs_of_t_cflds(model, gen, instr, interpolate_res):
         signals.append(signal[key]["values"])
         ts = signal[key]["ts"]
         hks.append(hctrls[key])
-
     signals_interp = []
     for sig in signals:
         sig_new = interpolateSignal(ts, sig, interpolate_res)
@@ -698,27 +697,19 @@ def get_Hs_of_t_cflds(model, gen, instr, interpolate_res):
     cflds = tf.cast(signals_interp, tf.complex128)
     hks = tf.cast(hks, tf.complex128)
     Hs = calculate_sum_Hs(h0, hks, cflds)
+    print(Hs)
     ts = tf.cast(ts, dtype=tf.complex128)
     dt = ts[1] - ts[0]
     return {"Hs": Hs, "ts": ts, "dt": dt}
 
 def calculate_sum_Hs(h0, hks, cflds):
-    Hs = []
-    for ii in range(tf.shape(cflds[0])[0]):  # TODO - Check which shape needs to be used
-        cf_t = tf.transpose(cflds)[ii]
-        Hs.append(sum_controls(h0, hks, cf_t))
-    return Hs
-
-def sum_controls(h0, hks, cf_t):
-    """
-    Compute and Return
-
-     H(t) = H_0 + sum_k c_k H_k.
-    """
-    cf_t = tf.reshape(cf_t, (tf.shape(hks)[0], 1, 1))
-    h_of_t = tf.multiply(hks, cf_t)
-    return tf.reduce_sum(h_of_t, axis=0) + h0
-
+    control_field = tf.reshape(
+        tf.transpose(cflds), 
+        (tf.shape(cflds)[1], tf.shape(cflds)[0], 1, 1)
+        )
+    hk = tf.multiply(control_field, hks)
+    Hs = tf.reduce_sum(hk, axis=1)
+    return Hs + h0
 
 # TODO - change this function to include interpolation
 # TODO - Also make this compatible with tf.function by removing .numpy()
@@ -745,7 +736,7 @@ def propagate_lind(Hs, col, rho, ts, dt):
         if index < len(Hs) / 2 - 1:
             h = Hs[
                 2 * index : 2 * index + 3
-            ]  # TODO - check for the end point. Also for tf.function
+            ]  # TODO -  check for tf.function
             rho_t = rk4_step_lind(lindblad_step, rho_t, h, col, dt)
             rho_list.append(rho_t)
     return rho_list
