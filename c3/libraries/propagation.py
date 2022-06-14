@@ -670,15 +670,15 @@ def lindblad_rk4(
     return {"states": rhos, "ts": ts}
 
 
-def Hs_of_t(model, gen, instr, interpolate_res=2):
+def Hs_of_t(model, gen, instr, interpolate_res=2, collapse_ops=None):
     if model.controllability:
-        Hs = get_Hs_of_t_cflds(model, gen, instr, interpolate_res)
+        Hs = get_Hs_of_t_cflds(model, gen, instr, interpolate_res, collapse_ops)
     else:
         Hs = get_Hs_of_t_no_cflds(model, gen, instr, interpolate_res)
     return Hs
 
 
-def get_Hs_of_t_cflds(model, gen, instr, interpolate_res):
+def get_Hs_of_t_cflds(model, gen, instr, interpolate_res, collapse_ops):
     Hs = []
     ts = []
     signal = gen.generate_signals(instr)
@@ -693,22 +693,48 @@ def get_Hs_of_t_cflds(model, gen, instr, interpolate_res):
     for sig in signals:
         sig_new = interpolateSignal(ts, sig, interpolate_res)
         signals_interp.append(sig_new)
+    
+    L_dag_L = {}
+    if collapse_ops is not None:
+        for key in model.subsytems:
+            L_dag_L[key] = {}
+            L_dag_L[key]["relax"] = tf.matmul(
+                tf.transpose(collapse_ops[key]["relax"], conjugate=True),
+                collapse_ops[key]["relax"]
+                )
+            L_dag_L[key]["dec"] = tf.matmul(
+                tf.transpose(collapse_ops[key]["dec"], conjugate=True),
+                collapse_ops[key]["dec"]
+                )
+            L_dag_L[key]["temp"] = tf.matmul(
+                tf.transpose(collapse_ops[key]["temp"], conjugate=True),
+                collapse_ops[key]["temp"]
+                )
 
     cflds = tf.cast(signals_interp, tf.complex128)
     hks = tf.cast(hks, tf.complex128)
-    Hs = calculate_sum_Hs(h0, hks, cflds)
-    print(Hs)
+    if collapse_ops is not None:
+        Hs = calculate_sum_Hs(h0, hks, cflds, L_dag_L)
+    else:
+        Hs = calculate_sum_Hs(h0, hks, cflds)
     ts = tf.cast(ts, dtype=tf.complex128)
     dt = ts[1] - ts[0]
-    return {"Hs": Hs, "ts": ts, "dt": dt}
 
-def calculate_sum_Hs(h0, hks, cflds):
+    if collapse_ops is not None:
+        return {"Hs": Hs, "ts": ts, "dt": dt, "LdagL": L_dag_L} 
+    else:
+        return {"Hs": Hs, "ts": ts, "dt": dt}
+
+def calculate_sum_Hs(h0, hks, cflds, L_dag_L=None):
     control_field = tf.reshape(
         tf.transpose(cflds), 
         (tf.shape(cflds)[1], tf.shape(cflds)[0], 1, 1)
         )
     hk = tf.multiply(control_field, hks)
     Hs = tf.reduce_sum(hk, axis=1)
+    if L_dag_L is not None:
+        for keys, values in L_dag_L.items():
+            Hs = Hs - 1j * 0.5 * values 
     return Hs + h0
 
 # TODO - change this function to include interpolation
@@ -789,14 +815,7 @@ def stochastic_schrodinger_rk4(
     instruction: Instruction, 
     psi_init: tf.Tensor
 ) -> Dict:
-    hs_of_t_ts = Hs_of_t(model, generator, instruction) 
-    hs = hs_of_t_ts["Hs"]
-    ts = hs_of_t_ts["ts"]
-    dt = hs_of_t_ts["dt"]
-    # TODO - check these probabilites. They dont turn 1 for short T1 and T2 times
-    plist = precompute_dissipation_probs(model, ts, dt)
-
-
+    
     collapse_ops = {}
     for key in model.subsystems:
         collapse_ops[key] = {}
@@ -804,6 +823,13 @@ def stochastic_schrodinger_rk4(
         collapse_ops[key]["dec"] = tf.cast(model.subsystems[key].collapse_ops["t2star"], dtype=tf.complex128)
         collapse_ops[key]["temp"] = tf.cast(model.subsystems[key].collapse_ops["temp"], dtype=tf.complex128)
 
+    hs_of_t_ts = Hs_of_t(model, generator, instruction, collapse_ops) 
+    hs = hs_of_t_ts["Hs"]
+    ts = hs_of_t_ts["ts"]
+    dt = hs_of_t_ts["dt"]
+    L_dag_L = hs_of_t_ts["LdagL"]
+    # TODO - check these probabilites. They dont turn 1 for short T1 and T2 times
+    plist = precompute_dissipation_probs(model, ts, dt)
 
     psi = psi_init
     psi_list = []
@@ -831,11 +857,11 @@ def stochastic_schrodinger_rk4(
             #    print(coherent_ev_flag)
 
             h = hs[2 * index : 2 * index + 3]
-            psi = rk4_lind_traj(h, psi, dt, relax_op_list, dec_op_list, temp_op_list, coherent_ev_flag)
+            psi = rk4_lind_traj(h, psi, dt, relax_op_list, dec_op_list, temp_op_list, coherent_ev_flag, L_dag_L)
             psi_list.append(psi)
     return {"states":psi_list, "ts": ts}
 
-def rk4_lind_traj(h, psi, dt, relax_ops, dec_ops, temp_ops, coherent_ev_flag):
+def rk4_lind_traj(h, psi, dt, relax_ops, dec_ops, temp_ops, coherent_ev_flag, L_dag_L):
     """
     Calculates the single time step lindbladian evoultion
     of a state vector.
@@ -850,13 +876,39 @@ def rk4_lind_traj(h, psi, dt, relax_ops, dec_ops, temp_ops, coherent_ev_flag):
     """
     # TODO - check for normalization of the states
     # TODO - What happens if two of them become one at the same time
-    psi_new = coherent_ev_flag * rk4_step(h, psi, dt)
+
+    pjk = []
+    for i in range(len(relax_ops)):
+        del_pk_T1 = tf.matmul(
+                tf.transpose(psi, conjugate=True),
+                tf.matmul(
+                    relax_ops[i], psi
+                )
+        )
+        del_pk_T2 = tf.matmul(
+                tf.transpose(psi, conjugate=True),
+                tf.matmul(
+                    dec_ops[i], psi
+                )
+        )
+        del_pk_Temp = tf.matmul(
+                tf.transpose(psi, conjugate=True),
+                tf.matmul(
+                    temp_ops[i], psi
+                )
+        )
+
+        pjk.append([del_pk_T1, del_pk_T2, del_pk_Temp])
+
+    pj = np.sum(pjk)
+
+    psi_new = coherent_ev_flag * rk4_step(h, psi, dt) * (1/np.sqrt(1 - pj))
     for i in range(len(relax_ops)):
         psi_new = (
                     psi_new 
-                    + tf.linalg.matmul(relax_ops[i],psi)
-                    + tf.linalg.matmul(dec_ops[i],psi)
-                    + tf.linalg.matmul(temp_ops[i],psi)
+                    + tf.linalg.matmul(relax_ops[i],psi) * (1/np.sqrt(pjk[i][0]))
+                    + tf.linalg.matmul(dec_ops[i],psi) * (1/np.sqrt(pjk[i][1]))
+                    + tf.linalg.matmul(temp_ops[i],psi) * (1/np.sqrt(pjk[i][2]))
                 )
     return psi_new
 
@@ -889,7 +941,7 @@ def precompute_dissipation_probs(model, ts, dt):
 
         try:
             temps[key] = model.subsystems[key].params["temp"].get_value()
-            pTemp[key] = 1/temps[key] * dt
+            pTemp[key] = 1/temps[key] * dt #TODO - check if there is a factor of Kb
         except KeyError:
             raise Exception(
                 f"Error: Temp for '{key}' is not defined."
