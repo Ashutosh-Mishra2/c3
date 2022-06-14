@@ -309,72 +309,6 @@ def pwc(
 
     return {"U": U, "dUs": dUs, "ts": ts}
 
-
-@unitary_deco
-def final_propagator(
-    model: Model,
-    gen: Generator,
-    instr: Instruction,
-    folding_stack: list,
-) -> Dict:
-    """
-    Calculate only the final propagator (Lindblad or Schrรถdinger) for a given control
-    signal and Hamiltonians.
-
-    Parameters
-    ----------
-    signal: dict
-        Waveform of the control signal per drive line.
-    gate: str
-        Identifier for one of the gates.
-
-    Returns
-    -------
-    unitary
-        Matrix representation of the gate.
-    """
-    signal = gen.generate_signals(instr)
-    # Why do I get 0.0 if I print gen.resolution here?! FR
-    ts = []
-    if model.controllability:
-        h0, hctrls = model.get_Hamiltonians()
-        signals = []
-        hks = []
-        for key in signal:
-            signals.append(signal[key]["values"])
-            ts = signal[key]["ts"]
-            hks.append(hctrls[key])
-        signals = tf.cast(signals, tf.complex128)
-        hks = tf.cast(hks, tf.complex128)
-    else:
-        h0 = model.get_Hamiltonian(signal)
-        ts_list = [sig["ts"][1:] for sig in signal.values()]
-        ts = tf.constant(tf.math.reduce_mean(ts_list, axis=0))
-        hks = None
-        signals = None
-        if not np.all(
-            tf.math.reduce_variance(ts_list, axis=0) < 1e-5 * (ts[1] - ts[0])
-        ):
-            raise Exception("C3Error:Something with the times happend.")
-        if not np.all(
-            tf.math.reduce_variance(ts[1:] - ts[:-1]) < 1e-5 * (ts[1] - ts[0])  # type: ignore
-        ):
-            raise Exception("C3Error:Something with the times happend.")
-
-    dt = ts[1] - ts[0]
-
-    if model.lindbladian:
-        col_ops = model.get_Lindbladians()
-        if model.max_excitations:
-            cutter = model.ex_cutter
-            col_ops = [cutter @ col_op @ cutter.T for col_op in col_ops]
-        U = tf_final_propagator_lind(h0, hks, col_ops, signals, dt)
-    else:
-        U = tf_final_propagator(h0, hks, signals, dt)
-
-    return {"U": U, "ts": ts}
-
-
 ####################
 # HELPER FUNCTIONS #
 ####################
@@ -719,60 +653,6 @@ def tf_expm_dynamic(A, acc=1e-5):
     return r
 
 
-def tf_final_propagator(h0, hks, cflds_t, dt):
-    dt = tf.cast(dt, dtype=tf.complex128)
-    if hks is not None and cflds_t is not None:
-        cflds_t = tf.cast(cflds_t, dtype=tf.complex128)
-        hks = tf.cast(hks, dtype=tf.complex128)
-        cflds = tf.expand_dims(tf.expand_dims(cflds_t, 2), 3)
-        hks = tf.expand_dims(hks, 1)
-        if len(h0.shape) < 3:
-            h0 = tf.expand_dims(h0, 0)
-        prod = cflds * hks
-        h = h0 + tf.reduce_sum(prod, axis=0)
-    else:
-        h = tf.cast(h0, tf.complex128)
-    dh = -1.0j * h * dt
-    h = tf.reduce_sum(dh, axis=0)  # TODO - check the axis
-    return tf.linalg.expm(h)
-
-
-def tf_final_propagator_lind(h0, hks, col_ops, cflds_t, dt):
-    col_ops = tf.cast(col_ops, dtype=tf.complex128)
-    dt = tf.cast(dt, dtype=tf.complex128)
-    if hks is not None and cflds_t is not None:
-        cflds_t = tf.cast(cflds_t, dtype=tf.complex128)
-        hks = tf.cast(hks, dtype=tf.complex128)
-        cflds = tf.expand_dims(tf.expand_dims(cflds_t, 2), 3)
-        hks = tf.expand_dims(hks, 1)
-        h0 = tf.expand_dims(h0, 0)
-        prod = cflds * hks
-        h = h0 + tf.reduce_sum(prod, axis=0)
-    else:
-        h = h0
-
-    h_id = tf.eye(h.shape[-1], batch_shape=[h.shape[0]], dtype=tf.complex128)
-    l_s = tf_kron(h, h_id)
-    r_s = tf_kron(h_id, tf.linalg.matrix_transpose(h))
-    lind_op = -1j * (l_s - r_s)
-
-    col_ops_id = tf.eye(
-        col_ops.shape[-1], batch_shape=[col_ops.shape[0]], dtype=tf.complex128
-    )
-    l_col_ops = tf_kron(col_ops, col_ops_id)
-    r_col_ops = tf_kron(col_ops_id, tf.linalg.matrix_transpose(col_ops))
-
-    super_clp = tf.matmul(l_col_ops, r_col_ops, adjoint_b=True)
-    anticom_L_clp = 0.5 * tf.matmul(l_col_ops, l_col_ops, adjoint_a=True)
-    anticom_R_clp = 0.5 * tf.matmul(r_col_ops, r_col_ops, adjoint_b=True)
-    clp = tf.expand_dims(
-        tf.reduce_sum(super_clp - anticom_L_clp - anticom_R_clp, axis=0), 0
-    )
-    lind_op += clp
-    lind_total = tf.reduce_sum(lind_op * dt, axis=0)  # TODO- check the axis
-    return tf.linalg.expm(lind_total)
-
-
 @state_deco
 def lindblad_rk4(
     model: Model,
@@ -817,15 +697,27 @@ def get_Hs_of_t_cflds(model, gen, instr, interpolate_res):
 
     cflds = tf.cast(signals_interp, tf.complex128)
     hks = tf.cast(hks, tf.complex128)
-    for ii in range(tf.shape(cflds[0])[0]):  # TODO - Check which shape needs to be used
-        cf_t = []
-        for fields in cflds:
-            cf_t.append(tf.cast(fields[ii], tf.complex128))
-        Hs.append(sum_h0_hks(h0, hks, cf_t))
-
+    Hs = calculate_sum_Hs(h0, hks, cflds)
     ts = tf.cast(ts, dtype=tf.complex128)
     dt = ts[1] - ts[0]
     return {"Hs": Hs, "ts": ts, "dt": dt}
+
+def calculate_sum_Hs(h0, hks, cflds):
+    Hs = []
+    for ii in range(tf.shape(cflds[0])[0]):  # TODO - Check which shape needs to be used
+        cf_t = tf.transpose(cflds)[ii]
+        Hs.append(sum_controls(h0, hks, cf_t))
+    return Hs
+
+def sum_controls(h0, hks, cf_t):
+    """
+    Compute and Return
+
+     H(t) = H_0 + sum_k c_k H_k.
+    """
+    cf_t = tf.reshape(cf_t, (tf.shape(hks)[0], 1, 1))
+    h_of_t = tf.multiply(hks, cf_t)
+    return tf.reduce_sum(h_of_t, axis=0) + h0
 
 
 # TODO - change this function to include interpolation

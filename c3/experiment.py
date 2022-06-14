@@ -660,6 +660,7 @@ class Experiment:
         trace = np.trace(np.matmul(rho, oper))
         return [[np.real(trace)]]  # ,[np.imag(trace)]]
 
+    #@tf.function
     def solve_lindblad_ode(self, init_state, sequence):
         """
         Solve the Lindblad master equation by integrating the differential

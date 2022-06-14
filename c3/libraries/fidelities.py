@@ -1015,3 +1015,5 @@ def calculateStateOverlap(psi1, psi2):
         return tf.linalg.trace(tf.matmul(tf.transpose(psi1, conjugate=True), psi2))
     else:
         return tf_ketket_fid(psi1, psi2)
+
+
