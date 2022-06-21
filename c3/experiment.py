@@ -708,7 +708,7 @@ class Experiment:
         return {"states": rho_list, "ts": ts_list}
 
 
-    def solve_stochastic_ode(self, init_state, sequence, Num_shots):
+    def solve_stochastic_ode(self, init_state, sequence, Num_shots, enable_vec_map=False):
         """
         Solve the Lindblad master equation by integrating the differential
         equation of the density matrix
@@ -734,14 +734,25 @@ class Experiment:
         ts_init = tf.constant(0.0, dtype=tf.complex128)
         self.set_prop_method("stochastic_schrodinger_rk4")
 
-        psi_shots = []
-        for num in range(Num_shots):
-            psi_list, ts_list = self.single_stochastic_run(sequence, init_state)
-            psi_shots.append(psi_list)
+        self.sequence = sequence
+        self.init_state = init_state
+
+        if not enable_vec_map:
+            psi_shots = []
+            for num in range(Num_shots):
+                psi_list, ts_list = self.single_stochastic_run((sequence, init_state))
+                psi_shots.append(psi_list)
+        else:
+            x = tf.constant([i for i in range(Num_shots)])
+            psi_shots = tf.vectorized_map(self.single_stochastic_run, x)
+        
+
         # TODO - Add Frame rotation and dephasing strength
         return {"states": psi_shots, "ts": ts_list}
     
-    def single_stochastic_run(self, sequence, init_state):
+    def single_stochastic_run(self, x):
+        sequence = self.sequence
+        init_state = self.init_state
         instructions = self.pmap.instructions
         model = self.pmap.model
         generator = self.pmap.generator

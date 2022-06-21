@@ -834,7 +834,7 @@ def stochastic_schrodinger_rk4(
 
     psi = psi_init
     psi_list = []
-    for index in range(len(ts)):
+    for index in range(ts.shape[0]):
         if index < len(hs) / 2 - 1:
             relax_op_list = []
             dec_op_list = []
@@ -879,7 +879,7 @@ def rk4_lind_traj(h, psi, dt, relax_ops, dec_ops, temp_ops, coherent_ev_flag, L_
     # TODO - What happens if two of them become one at the same time
 
     pjk = []
-    for keys, values in L_dag_L.items():
+    for _, values in L_dag_L.items():
         del_pk_T1 = tf.matmul(
                 tf.transpose(psi, conjugate=True),
                 tf.matmul(
@@ -910,17 +910,13 @@ def rk4_lind_traj(h, psi, dt, relax_ops, dec_ops, temp_ops, coherent_ev_flag, L_
         for i in range(len(relax_ops)):
             psi_new = (
                         psi_new 
-                        + tf.linalg.matmul(relax_ops[i],psi) * (1/np.sqrt(pjk[i][0]))
-                        + tf.linalg.matmul(dec_ops[i],psi) * (1/np.sqrt(pjk[i][1]))
-                        + tf.linalg.matmul(temp_ops[i],psi) * (1/np.sqrt(pjk[i][2]))
+                        + tf.linalg.matmul(relax_ops[i],psi) * (1/tf.sqrt(pjk[i][0]))
+                        + tf.linalg.matmul(dec_ops[i],psi) * (1/tf.sqrt(pjk[i][1]))
+                        + tf.linalg.matmul(temp_ops[i],psi) * (1/tf.sqrt(pjk[i][2]))
                     )
     return psi_new
 
 def precompute_dissipation_probs(model, ts, dt):
-    t1s = {}
-    t2s = {}
-    temps = {}
-
     # TODO - correct the probability values
     pT1 = {}
     pT2 = {}
@@ -929,23 +925,23 @@ def precompute_dissipation_probs(model, ts, dt):
     dt = tf.cast(dt, dtype=tf.float64)
     for key in model.subsystems:
         try:
-            t1s[key] = model.subsystems[key].params["t1"].get_value()
-            pT1[key] = 1/t1s[key] * dt
+            t1_val = model.subsystems[key].params["t1"].get_value()
+            pT1[key] = 1/t1_val * dt
         except KeyError:
             raise Exception(
                 f"Error: T1 for '{key}' is not defined."
             )
         try:
-            t2s[key] = model.subsystems[key].params["t2star"].get_value()
-            pT2[key] = 1/t2s[key] * dt
+            t2_val = model.subsystems[key].params["t2star"].get_value()
+            pT2[key] = 1/t2_val * dt
         except KeyError:
             raise Exception(
                 f"Error: T2Star for '{key}' is not defined."
             )
 
         try:
-            temps[key] = model.subsystems[key].params["temp"].get_value()
-            pTemp[key] = 1/temps[key] * dt #TODO - check if there is a factor of Kb
+            temp_val = model.subsystems[key].params["temp"].get_value()
+            pTemp[key] = 1/temp_val * dt #TODO - check if there is a factor of Kb
         except KeyError:
             raise Exception(
                 f"Error: Temp for '{key}' is not defined."
@@ -955,15 +951,16 @@ def precompute_dissipation_probs(model, ts, dt):
     g = tf.random.get_global_generator()
     for key in model.subsystems:
         plists[key] = {}
-        temp1 = g.uniform(shape=[len(ts)], dtype=tf.float64)
-        temp2 = g.uniform(shape=[len(ts)], dtype=tf.float64)
-        tempt = g.uniform(shape=[len(ts)], dtype=tf.float64)
+        temp1 = g.uniform(shape=[tf.shape(ts)[0]], dtype=tf.float64)
+        temp2 = g.uniform(shape=[tf.shape(ts)[0]], dtype=tf.float64)
+        tempt = g.uniform(shape=[tf.shape(ts)[0]], dtype=tf.float64)
         
         plists[key]["t1"] = []
         plists[key]["t2star"] = []
         plists[key]["temp"] = []
 
-        for i in range(len(ts)):
+        # TODO - Simplify this to use less if conditions
+        for i in range(ts.shape[0]):
             if temp1[i] < pT1[key]:
                 plists[key]["t1"].append(1)
             else:
