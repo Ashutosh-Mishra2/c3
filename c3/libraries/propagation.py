@@ -662,7 +662,7 @@ def lindblad_rk4(
     init_state=None,
 ) -> Dict:
     Hs_dict = Hs_of_t(model, gen, instr)
-    Hs = Hs_dict["Hs"]
+    Hs = tf.constant(Hs_dict["Hs"], dtype=tf.complex128)
     ts = Hs_dict["ts"]
     dt = Hs_dict["dt"]
     rhos = propagate_lind(Hs, collapse_ops, init_state, ts, dt)
@@ -759,11 +759,12 @@ def get_Hs_of_t_no_cflds(model, gen, instr, prop_res):
 def propagate_lind(Hs, col, rho, ts, dt):
     rho_list = []
     rho_t = rho
-    for index in range(len(ts)):
-        if index < len(Hs) / 2 - 1:
-            h = Hs[
-                2 * index : 2 * index + 3
-            ]  # TODO -  check for tf.function
+    for index in range(ts.shape[0]):
+        if index < (Hs.shape[0]/2) - 1:
+            #h = Hs[
+            #    2 * index : 2 * index + 3
+            #]  # TODO -  check for tf.function
+            h = tf.slice(Hs, [2*index, 0, 0], [3, Hs.shape[1], Hs.shape[2]])
             rho_t = rk4_step_lind(lindblad_step, rho_t, h, col, dt)
             rho_list.append(rho_t)
     return rho_list
@@ -774,7 +775,7 @@ def rk4_step_lind(func, rho, h, col, dt):
     k2 = func(rho + k1 / 2.0, h[1], col, dt)
     k3 = func(rho + k2 / 2.0, h[1], col, dt)
     k4 = func(rho + k3, h[2], col, dt)
-    rho += (k1 + 2 * k2 + 2 * k3 + k4) / 6.0
+    rho = rho + (k1 + 2 * k2 + 2 * k3 + k4) / 6.0
     return rho
 
 
@@ -862,6 +863,7 @@ def stochastic_schrodinger_rk4(
             psi_list.append(psi)
     return {"states":psi_list, "ts": ts}
 
+@tf.function
 def rk4_lind_traj(h, psi, dt, relax_ops, dec_ops, temp_ops, coherent_ev_flag, L_dag_L):
     """
     Calculates the single time step lindbladian evoultion
