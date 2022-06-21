@@ -696,7 +696,7 @@ def get_Hs_of_t_cflds(model, gen, instr, interpolate_res, collapse_ops):
     
     L_dag_L = {}
     if collapse_ops is not None:
-        for key in model.subsytems:
+        for key in model.subsystems:
             L_dag_L[key] = {}
             L_dag_L[key]["relax"] = tf.matmul(
                 tf.transpose(collapse_ops[key]["relax"], conjugate=True),
@@ -734,7 +734,8 @@ def calculate_sum_Hs(h0, hks, cflds, L_dag_L=None):
     Hs = tf.reduce_sum(hk, axis=1)
     if L_dag_L is not None:
         for keys, values in L_dag_L.items():
-            Hs = Hs - 1j * 0.5 * values 
+            for name, col in values.items():
+                Hs = Hs - 1j * 0.5 * col
     return Hs + h0
 
 # TODO - change this function to include interpolation
@@ -823,7 +824,7 @@ def stochastic_schrodinger_rk4(
         collapse_ops[key]["dec"] = tf.cast(model.subsystems[key].collapse_ops["t2star"], dtype=tf.complex128)
         collapse_ops[key]["temp"] = tf.cast(model.subsystems[key].collapse_ops["temp"], dtype=tf.complex128)
 
-    hs_of_t_ts = Hs_of_t(model, generator, instruction, collapse_ops) 
+    hs_of_t_ts = Hs_of_t(model, generator, instruction, collapse_ops=collapse_ops) 
     hs = hs_of_t_ts["Hs"]
     ts = hs_of_t_ts["ts"]
     dt = hs_of_t_ts["dt"]
@@ -878,38 +879,41 @@ def rk4_lind_traj(h, psi, dt, relax_ops, dec_ops, temp_ops, coherent_ev_flag, L_
     # TODO - What happens if two of them become one at the same time
 
     pjk = []
-    for i in range(len(relax_ops)):
+    for keys, values in L_dag_L.items():
         del_pk_T1 = tf.matmul(
                 tf.transpose(psi, conjugate=True),
                 tf.matmul(
-                    relax_ops[i], psi
+                    values["relax"], psi
                 )
-        )
+        )[0][0]
         del_pk_T2 = tf.matmul(
                 tf.transpose(psi, conjugate=True),
                 tf.matmul(
-                    dec_ops[i], psi
+                    values["dec"], psi
                 )
-        )
+        )[0][0]
         del_pk_Temp = tf.matmul(
                 tf.transpose(psi, conjugate=True),
                 tf.matmul(
-                    temp_ops[i], psi
+                    values["temp"], psi
                 )
-        )
+        )[0][0]
 
         pjk.append([del_pk_T1, del_pk_T2, del_pk_Temp])
 
-    pj = np.sum(pjk)
+    pj = tf.reduce_sum(pjk) * dt
 
-    psi_new = coherent_ev_flag * rk4_step(h, psi, dt) * (1/np.sqrt(1 - pj))
-    for i in range(len(relax_ops)):
-        psi_new = (
-                    psi_new 
-                    + tf.linalg.matmul(relax_ops[i],psi) * (1/np.sqrt(pjk[i][0]))
-                    + tf.linalg.matmul(dec_ops[i],psi) * (1/np.sqrt(pjk[i][1]))
-                    + tf.linalg.matmul(temp_ops[i],psi) * (1/np.sqrt(pjk[i][2]))
-                )
+    psi_new = coherent_ev_flag * rk4_step(h, psi, dt) * (1/tf.sqrt(1 - pj))
+
+    # TODO - check if the condition below is correct. I have used this just for the time being.
+    if tf.reduce_prod(pjk) != 0:
+        for i in range(len(relax_ops)):
+            psi_new = (
+                        psi_new 
+                        + tf.linalg.matmul(relax_ops[i],psi) * (1/np.sqrt(pjk[i][0]))
+                        + tf.linalg.matmul(dec_ops[i],psi) * (1/np.sqrt(pjk[i][1]))
+                        + tf.linalg.matmul(temp_ops[i],psi) * (1/np.sqrt(pjk[i][2]))
+                    )
     return psi_new
 
 def precompute_dissipation_probs(model, ts, dt):
