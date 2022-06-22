@@ -708,7 +708,6 @@ class Experiment:
         # TODO - Add Frame rotation and dephasing strength
         return {"states": rho_list, "ts": ts_list}
 
-
     def solve_stochastic_ode(self, init_state, sequence, Num_shots, enable_vec_map=False):
         """
         Solve the Lindblad master equation by integrating the differential
@@ -753,10 +752,13 @@ class Experiment:
         instructions = self.pmap.instructions
         model = self.pmap.model
         generator = self.pmap.generator
-        psi_list = []
-        ts_list = []
+
         psi_init = init_state
         ts_init = tf.constant(0.0, dtype=tf.complex128)
+
+        psi_list = tf.expand_dims(psi_init, 0)
+        ts_list = [ts_init]
+
         for gate in sequence:
             try:
                 instr = instructions[gate]
@@ -766,7 +768,7 @@ class Experiment:
                     f" Available gates are:\n {list(instructions.keys())}."
                 )
             result = self.propagation(model, generator, instr, psi_init)
-            psi_list = psi_list + result["states"]
+            psi_list = tf.concat([psi_list,  result["states"]], 0)
             ts_list = tf.concat([ts_list, tf.add(result["ts"], ts_init)], 0)
             psi_init = result["states"][-1]
             ts_init = result["ts"][-1]
