@@ -659,7 +659,7 @@ class Experiment:
             rho = tf_state_to_dm(state)
         trace = np.trace(np.matmul(rho, oper))
         return [[np.real(trace)]]  # ,[np.imag(trace)]]
-
+    
     @tf.function
     def solve_lindblad_ode(self, init_state, sequence):
         """
@@ -688,8 +688,8 @@ class Experiment:
         ts_init = tf.constant(0.0, dtype=tf.complex128)
         self.set_prop_method("lindblad_rk4")
 
-        rho_list = []
-        ts_list = []
+        rho_list = tf.expand_dims(rho_init, 0)
+        ts_list = [ts_init]
 
         for gate in sequence:
             try:
@@ -700,7 +700,7 @@ class Experiment:
                     f" Available gates are:\n {list(instructions.keys())}."
                 )
             result = self.propagation(model, generator, instr, collapse_ops, rho_init)
-            rho_list = rho_list + result["states"]
+            rho_list = tf.concat([rho_list, result["states"]], 0)
             ts_list = tf.concat([ts_list, tf.add(result["ts"], ts_init)], 0)
             rho_init = result["states"][-1]
             ts_init = result["ts"][-1]
@@ -727,12 +727,8 @@ class Experiment:
                 + "This method uses state vectors instead of density matrices."
             )
 
-        generator = self.pmap.generator
-        instructions = self.pmap.instructions
         model.controllability = self.use_control_fields
 
-        psi_init = init_state
-        ts_init = tf.constant(0.0, dtype=tf.complex128)
         self.set_prop_method("stochastic_schrodinger_rk4")
 
         self.sequence = sequence

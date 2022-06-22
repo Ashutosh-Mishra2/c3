@@ -662,7 +662,7 @@ def lindblad_rk4(
     init_state=None,
 ) -> Dict:
     Hs_dict = Hs_of_t(model, gen, instr)
-    Hs = tf.constant(Hs_dict["Hs"], dtype=tf.complex128)
+    Hs = Hs_dict["Hs"]
     ts = Hs_dict["ts"]
     dt = Hs_dict["dt"]
     rhos = propagate_lind(Hs, collapse_ops, init_state, ts, dt)
@@ -679,7 +679,6 @@ def Hs_of_t(model, gen, instr, interpolate_res=2, collapse_ops=None):
 
 
 def get_Hs_of_t_cflds(model, gen, instr, interpolate_res, collapse_ops):
-    Hs = []
     ts = []
     signal = gen.generate_signals(instr)
     h0, hctrls = model.get_Hamiltonians()
@@ -757,17 +756,18 @@ def get_Hs_of_t_no_cflds(model, gen, instr, prop_res):
     return {"Hs": Hs, "ts": ts[::prop_res], "dt": dt}
 
 def propagate_lind(Hs, col, rho, ts, dt):
-    rho_list = []
+    rho_list = tf.TensorArray(
+                    tf.complex128, 
+                    size=ts.shape[0], 
+                    dynamic_size=False, 
+                    infer_shape=False
+    )
     rho_t = rho
-    for index in range(ts.shape[0]):
-        if index < (Hs.shape[0]/2) - 1:
-            #h = Hs[
-            #    2 * index : 2 * index + 3
-            #]  # TODO -  check for tf.function
-            h = tf.slice(Hs, [2*index, 0, 0], [3, Hs.shape[1], Hs.shape[2]])
-            rho_t = rk4_step_lind(lindblad_step, rho_t, h, col, dt)
-            rho_list.append(rho_t)
-    return rho_list
+    for index in tf.range(ts.shape[0]):
+        h = tf.slice(Hs, [2*index, 0, 0], [3, Hs.shape[1], Hs.shape[2]])
+        rho_t = rk4_step_lind(lindblad_step, rho_t, h, col, dt)
+        rho_list = rho_list.write(index, rho_t)
+    return rho_list.stack()
 
 # TODO - make a RK45 algorithm with interpolation
 def rk4_step_lind(func, rho, h, col, dt):
@@ -863,7 +863,6 @@ def stochastic_schrodinger_rk4(
             psi_list.append(psi)
     return {"states":psi_list, "ts": ts}
 
-@tf.function
 def rk4_lind_traj(h, psi, dt, relax_ops, dec_ops, temp_ops, coherent_ev_flag, L_dag_L):
     """
     Calculates the single time step lindbladian evoultion
