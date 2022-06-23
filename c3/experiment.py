@@ -733,6 +733,52 @@ class Experiment:
         self.sequence = sequence
         self.init_state = init_state
 
+        # TODO - Multiply factors of gamma to the collapse operators
+        
+        N_sub = len(model.subsystems)
+
+        collapse_ops = tf.TensorArray(
+                        tf.complex128,
+                        size=N_sub,
+                        dynamic_size=False, 
+                        infer_shape=False
+        )
+        counter = 0
+        for key in model.subsystems:
+            cols = tf.convert_to_tensor([
+                model.subsystems[key].collapse_ops["t1"],
+                model.subsystems[key].collapse_ops["t2star"],
+                model.subsystems[key].collapse_ops["temp"]
+            ], dtype=tf.complex128)
+            collapse_ops = collapse_ops.write(counter, cols)
+            counter += 1
+
+        collapse_ops = collapse_ops.stack()
+        self.collapse_ops = collapse_ops
+
+
+        L_dag_L = []
+        counter = 0
+        for key in model.subsystems:
+            cols = [
+                tf.matmul(
+                tf.transpose(collapse_ops[counter][0], conjugate=True),
+                collapse_ops[counter][0]
+                ),
+                tf.matmul(
+                tf.transpose(collapse_ops[counter][1], conjugate=True),
+                collapse_ops[counter][1]
+                ),
+                tf.matmul(
+                tf.transpose(collapse_ops[counter][2], conjugate=True),
+                collapse_ops[counter][2]
+                )
+            ]
+            L_dag_L.append(cols)
+            counter += 1
+        self.L_dag_L = L_dag_L
+
+
         if not enable_vec_map:
             psi_shots = []
             for num in range(Num_shots):
@@ -753,6 +799,8 @@ class Experiment:
         instructions = self.pmap.instructions
         model = self.pmap.model
         generator = self.pmap.generator
+        collapse_ops = self.collapse_ops
+        L_dag_L = self.L_dag_L
 
         psi_init = init_state
         ts_init = tf.constant(0.0, dtype=tf.complex128)
@@ -768,7 +816,7 @@ class Experiment:
                     f"C3:Error: Gate '{gate}' is not defined."
                     f" Available gates are:\n {list(instructions.keys())}."
                 )
-            result = self.propagation(model, generator, instr, psi_init)
+            result = self.propagation(model, generator, instr, collapse_ops, psi_init, L_dag_L)
             psi_list = tf.concat([psi_list,  result["states"]], 0)
             ts_list = tf.concat([ts_list, tf.add(result["ts"], ts_init)], 0)
             psi_init = result["states"][-1]

@@ -670,15 +670,15 @@ def lindblad_rk4(
     return {"states": rhos, "ts": ts}
 
 
-def Hs_of_t(model, gen, instr, interpolate_res=2, collapse_ops=None):
+def Hs_of_t(model, gen, instr, interpolate_res=2, L_dag_L=None):
     if model.controllability:
-        Hs = get_Hs_of_t_cflds(model, gen, instr, interpolate_res, collapse_ops)
+        Hs = get_Hs_of_t_cflds(model, gen, instr, interpolate_res, L_dag_L)
     else:
         Hs = get_Hs_of_t_no_cflds(model, gen, instr, interpolate_res)
     return Hs
 
 
-def get_Hs_of_t_cflds(model, gen, instr, interpolate_res, collapse_ops):
+def get_Hs_of_t_cflds(model, gen, instr, interpolate_res, L_dag_L=None):
     ts = []
     signal = gen.generate_signals(instr)
     h0, hctrls = model.get_Hamiltonians()
@@ -692,42 +692,17 @@ def get_Hs_of_t_cflds(model, gen, instr, interpolate_res, collapse_ops):
     for sig in signals:
         sig_new = interpolateSignal(ts, sig, interpolate_res)
         signals_interp.append(sig_new)
-    
-    L_dag_L = []
-    counter = 0
-    if collapse_ops is not None:
-        for key in model.subsystems:
-            L_dag_L.append([])
-            L_dag_L[counter].append(
-                tf.matmul(
-                tf.transpose(collapse_ops[counter][0], conjugate=True),
-                collapse_ops[counter][0]
-                )
-            )
-            L_dag_L[counter].append(
-                tf.matmul(
-                tf.transpose(collapse_ops[counter][1], conjugate=True),
-                collapse_ops[counter][1]
-                )
-            )
-            L_dag_L[counter].append(
-                tf.matmul(
-                tf.transpose(collapse_ops[counter][2], conjugate=True),
-                collapse_ops[counter][2]
-                )
-            )
-            counter += 1
 
     cflds = tf.cast(signals_interp, tf.complex128)
     hks = tf.cast(hks, tf.complex128)
-    if collapse_ops is not None:
+    if L_dag_L is not None:
         Hs = calculate_sum_Hs(h0, hks, cflds, L_dag_L)
     else:
         Hs = calculate_sum_Hs(h0, hks, cflds)
     ts = tf.cast(ts, dtype=tf.complex128)
     dt = ts[1] - ts[0]
 
-    if collapse_ops is not None:
+    if L_dag_L is not None:
         return {"Hs": Hs, "ts": ts, "dt": dt, "LdagL": L_dag_L} 
     else:
         return {"Hs": Hs, "ts": ts, "dt": dt}
@@ -823,38 +798,20 @@ def interpolateSignal(ts, sig, interpolate_res):
 def stochastic_schrodinger_rk4(
     model: Model,
     generator: Generator, 
-    instruction: Instruction, 
-    psi_init: tf.Tensor
+    instruction: Instruction,
+    collapse_ops: tf.Tensor, 
+    psi_init: tf.Tensor,
+    L_dag_L: tf.Tensor
 ) -> Dict:
-    
-    # TODO - Multiply factors of gamma to the collapse operators
-    
-    collapse_ops = tf.TensorArray(
-                    tf.complex128,
-                    size=len(model.subsystems),
-                    dynamic_size=False, 
-                    infer_shape=False
-    )
-    counter = 0
-    for key in model.subsystems:
-        cols = tf.convert_to_tensor([
-            tf.cast(model.subsystems[key].collapse_ops["t1"], dtype=tf.complex128),
-            tf.cast(model.subsystems[key].collapse_ops["t2star"], dtype=tf.complex128),
-            tf.cast(model.subsystems[key].collapse_ops["temp"], dtype=tf.complex128)
-        ], dtype=tf.complex128)
-        collapse_ops = collapse_ops.write(counter, cols)
-        counter += 1
-    collapse_ops = collapse_ops.stack()
-
-    hs_of_t_ts = Hs_of_t(model, generator, instruction, collapse_ops=collapse_ops) 
+    hs_of_t_ts = Hs_of_t(model, generator, instruction, L_dag_L=L_dag_L) 
     hs = hs_of_t_ts["Hs"]
     ts = hs_of_t_ts["ts"]
     dt = hs_of_t_ts["dt"]
-    L_dag_L = hs_of_t_ts["LdagL"]
 
     plist = precompute_dissipation_probs(model, ts, dt)
     psi_list = propagate_stochastic_lind(model, hs, collapse_ops, psi_init, ts, dt, L_dag_L, plist)
     return {"states":psi_list, "ts": ts}
+
 
 @tf.function
 def propagate_stochastic_lind(model, hs, collapse_ops, psi_init, ts, dt, L_dag_L, plist):
@@ -950,6 +907,7 @@ def rk4_lind_traj(h, psi, dt, relax_ops, dec_ops, temp_ops, coherent_ev_flag, L_
                     )
     return psi_new
 
+# TODO - Move this outside as this causes problem in graph mode
 def precompute_dissipation_probs(model, ts, dt):
     # TODO - correct the probability values
     pT1 = []
