@@ -736,6 +736,7 @@ class Experiment:
         if not enable_vec_map:
             psi_shots = []
             for num in range(Num_shots):
+                print(f"Running shot {num}")
                 psi_list, ts_list = self.single_stochastic_run((sequence, init_state))
                 psi_shots.append(psi_list)
         else:

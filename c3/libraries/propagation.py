@@ -736,13 +736,14 @@ def calculate_sum_Hs(h0, hks, cflds, L_dag_L=None):
     control_field = tf.reshape(
         tf.transpose(cflds), 
         (tf.shape(cflds)[1], tf.shape(cflds)[0], 1, 1)
-        )
+    )
     hk = tf.multiply(control_field, hks)
     Hs = tf.reduce_sum(hk, axis=1)
     if L_dag_L is not None:
-        for values in L_dag_L:
-            for col in values:
-                Hs = Hs - 1j * 0.5 * col
+        #for values in L_dag_L:
+        #    for col in values:
+        #        Hs = Hs - 1j * 0.5 * col
+        return Hs + h0 -1j * 0.5 * tf.reduce_sum(tf.reduce_sum(L_dag_L, axis=0), axis=0)
     return Hs + h0
 
 # TODO - change this function to include interpolation
@@ -826,23 +827,33 @@ def stochastic_schrodinger_rk4(
     psi_init: tf.Tensor
 ) -> Dict:
     
-    collapse_ops = []
+    # TODO - Multiply factors of gamma to the collapse operators
+    
+    collapse_ops = tf.TensorArray(
+                    tf.complex128,
+                    size=len(model.subsystems),
+                    dynamic_size=False, 
+                    infer_shape=False
+    )
     counter = 0
     for key in model.subsystems:
-        collapse_ops.append([])
-        collapse_ops[counter].append(tf.cast(model.subsystems[key].collapse_ops["t1"], dtype=tf.complex128))
-        collapse_ops[counter].append(tf.cast(model.subsystems[key].collapse_ops["t2star"], dtype=tf.complex128))
-        collapse_ops[counter].append(tf.cast(model.subsystems[key].collapse_ops["temp"], dtype=tf.complex128))
+        cols = tf.convert_to_tensor([
+            tf.cast(model.subsystems[key].collapse_ops["t1"], dtype=tf.complex128),
+            tf.cast(model.subsystems[key].collapse_ops["t2star"], dtype=tf.complex128),
+            tf.cast(model.subsystems[key].collapse_ops["temp"], dtype=tf.complex128)
+        ], dtype=tf.complex128)
+        collapse_ops = collapse_ops.write(counter, cols)
         counter += 1
+    collapse_ops = collapse_ops.stack()
 
     hs_of_t_ts = Hs_of_t(model, generator, instruction, collapse_ops=collapse_ops) 
     hs = hs_of_t_ts["Hs"]
     ts = hs_of_t_ts["ts"]
     dt = hs_of_t_ts["dt"]
     L_dag_L = hs_of_t_ts["LdagL"]
+
     plist = precompute_dissipation_probs(model, ts, dt)
     psi_list = propagate_stochastic_lind(model, hs, collapse_ops, psi_init, ts, dt, L_dag_L, plist)
-
     return {"states":psi_list, "ts": ts}
 
 @tf.function
@@ -856,7 +867,6 @@ def propagate_stochastic_lind(model, hs, collapse_ops, psi_init, ts, dt, L_dag_L
     )
 
     for index in tf.range(ts.shape[0]):
-        print("propagate_stochastic_lind")
         relax_op_list = []
         dec_op_list = []
         temp_op_list = []
@@ -902,7 +912,6 @@ def rk4_lind_traj(h, psi, dt, relax_ops, dec_ops, temp_ops, coherent_ev_flag, L_
     # TODO - check for normalization of the states
     # TODO - What happens if two of them become one at the same time
 
-    print("rk4_lind_traj")
     pjk = []
     for values in L_dag_L:
         del_pk_T1 = tf.matmul(
@@ -974,39 +983,40 @@ def precompute_dissipation_probs(model, ts, dt):
             )
         counter += 1
 
-
     plists = []
     g = tf.random.get_global_generator()
     counter = 0
+
+    
     for key in model.subsystems:
         plists.append([])
-        temp1 = g.uniform(shape=[tf.shape(ts)[0]], dtype=tf.float64)
-        temp2 = g.uniform(shape=[tf.shape(ts)[0]], dtype=tf.float64)
-        tempt = g.uniform(shape=[tf.shape(ts)[0]], dtype=tf.float64)
+        temp1 = g.uniform(shape=[ts.shape[0]], dtype=tf.float64)
+        temp2 = g.uniform(shape=[ts.shape[0]], dtype=tf.float64)
+        tempt = g.uniform(shape=[ts.shape[0]], dtype=tf.float64)
         
-        plists[counter].append([])
-        plists[counter].append([])
-        plists[counter].append([])
-
-
         # TODO - Simplify this to use less if conditions
-        for i in range(ts.shape[0]):
-            if temp1[i] < pT1[counter]:
-                plists[counter][0].append(1)
-            else:
-                plists[counter][0].append(0)
+        #for i in range(ts.shape[0]):
+        #    if temp1[i] < pT1[counter]:
+        #        plists[counter][0].append(1)
+        #    else:
+        #        plists[counter][0].append(0)
+        #
+        #    if temp2[i] < pT2[counter]:
+        #        plists[counter][1].append(1)
+        #    else:
+        #        plists[counter][1].append(0)
+        #
+        #    if tempt[i] < pTemp[counter]:
+        #        plists[counter][2].append(1)
+        #    else:
+        #        plists[counter][2].append(0)
 
-            if temp2[i] < pT2[counter]:
-                plists[counter][1].append(1)
-            else:
-                plists[counter][1].append(0)
 
-            if tempt[i] < pTemp[counter]:
-                plists[counter][2].append(1)
-            else:
-                plists[counter][2].append(0)
-        
+        plists[counter].append(tf.math.floor((tf.math.sign(-temp1 + pT1[counter]) + 1)/2))
+        plists[counter].append(tf.math.floor((tf.math.sign(-temp1 + pT2[counter]) + 1)/2))
+        plists[counter].append(tf.math.floor((tf.math.sign(-temp1 + pTemp[counter]) + 1)/2))
+
         counter += 1
-    return tf.constant(plists, dtype=tf.complex128)
+    return tf.cast(plists, dtype=tf.complex128)
         
      
