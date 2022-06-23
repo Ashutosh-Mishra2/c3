@@ -813,7 +813,6 @@ def stochastic_schrodinger_rk4(
     return {"states":psi_list, "ts": ts}
 
 
-@tf.function
 def propagate_stochastic_lind(model, hs, collapse_ops, psi_init, ts, dt, L_dag_L, plist):
     psi = psi_init
     psi_list = tf.TensorArray(

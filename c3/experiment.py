@@ -708,6 +708,7 @@ class Experiment:
         # TODO - Add Frame rotation and dephasing strength
         return {"states": rho_list, "ts": ts_list}
 
+
     def solve_stochastic_ode(self, init_state, sequence, Num_shots, enable_vec_map=False):
         """
         Solve the Lindblad master equation by integrating the differential
@@ -787,12 +788,14 @@ class Experiment:
                 psi_shots.append(psi_list)
         else:
             x = tf.constant([i for i in range(Num_shots)])
-            psi_shots = tf.vectorized_map(self.single_stochastic_run, x)
-        
+            psi_shots, ts_list = tf.vectorized_map(self.single_stochastic_run, x)
+
 
         # TODO - Add Frame rotation and dephasing strength
         return {"states": psi_shots, "ts": ts_list}
     
+    
+    @tf.function
     def single_stochastic_run(self, x):
         sequence = self.sequence
         init_state = self.init_state
