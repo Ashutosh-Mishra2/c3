@@ -951,28 +951,10 @@ def precompute_dissipation_probs(model, ts, dt):
         temp1 = g.uniform(shape=[ts.shape[0]], dtype=tf.float64)
         temp2 = g.uniform(shape=[ts.shape[0]], dtype=tf.float64)
         tempt = g.uniform(shape=[ts.shape[0]], dtype=tf.float64)
-        
-        # TODO - Simplify this to use less if conditions
-        #for i in range(ts.shape[0]):
-        #    if temp1[i] < pT1[counter]:
-        #        plists[counter][0].append(1)
-        #    else:
-        #        plists[counter][0].append(0)
-        #
-        #    if temp2[i] < pT2[counter]:
-        #        plists[counter][1].append(1)
-        #    else:
-        #        plists[counter][1].append(0)
-        #
-        #    if tempt[i] < pTemp[counter]:
-        #        plists[counter][2].append(1)
-        #    else:
-        #        plists[counter][2].append(0)
-
 
         plists[counter].append(tf.math.floor((tf.math.sign(-temp1 + pT1[counter]) + 1)/2))
-        plists[counter].append(tf.math.floor((tf.math.sign(-temp1 + pT2[counter]) + 1)/2))
-        plists[counter].append(tf.math.floor((tf.math.sign(-temp1 + pTemp[counter]) + 1)/2))
+        plists[counter].append(tf.math.floor((tf.math.sign(-temp2 + pT2[counter]) + 1)/2))
+        plists[counter].append(tf.math.floor((tf.math.sign(-tempt + pTemp[counter]) + 1)/2))
 
         counter += 1
     return tf.cast(plists, dtype=tf.complex128)
