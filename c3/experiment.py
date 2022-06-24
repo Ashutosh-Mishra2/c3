@@ -710,7 +710,7 @@ class Experiment:
         return {"states": rho_list, "ts": ts_list}
 
 
-    def solve_stochastic_ode(self, init_state, sequence, Num_shots, enable_vec_map=False):
+    def solve_stochastic_ode(self, init_state, sequence, Num_shots, enable_vec_map=False, batch_size=None):
         """
         Solve the Lindblad master equation by integrating the differential
         equation of the density matrix
@@ -790,6 +790,19 @@ class Experiment:
                 print(f"Running shot {num}")
                 psi_list, ts_list = self.single_stochastic_run((sequence, init_state))
                 psi_shots.append(psi_list)
+        
+        elif enable_vec_map and (batch_size != None):
+            Num_batches = int(tf.math.ceil(Num_shots/batch_size))
+            batch_array = tf.TensorArray(
+                tf.complex128, size=Num_batches, dynamic_size=False, infer_shape=False
+            )
+            for i in range(Num_batches):
+                x = tf.constant([i for i in range(batch_size)])
+                psi_shots, ts_list = tf.vectorized_map(self.single_stochastic_run, x)
+                batch_array = batch_array.write(i, psi_shots)
+            batch_array = batch_array.concat()
+            psi_shots = batch_array
+            
         else:
             x = tf.constant([i for i in range(Num_shots)])
             psi_shots, ts_list = tf.vectorized_map(self.single_stochastic_run, x)
