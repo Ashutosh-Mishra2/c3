@@ -14,6 +14,7 @@ from c3.utils.tf_utils import (
     tf_spre,
     tf_spost,
 )
+from c3.libraries.constants import kb, hbar
 
 unitary_provider = dict()
 state_provider = dict()
@@ -918,14 +919,14 @@ def precompute_dissipation_probs(model, ts, dt):
     for key, sub in model.subsystems.items():
         try:
             t1_val = sub.params["t1"].get_value()
-            pT1.append(1/t1_val * dt)
+            pT1.append(0.5 * dt/t1_val) #TODO - check for factors
         except KeyError:
             raise Exception(
                 f"Error: T1 for {key} is not defined."
             )
         try:
             t2_val = sub.params["t2star"].get_value()
-            pT2.append(1/t2_val * dt)
+            pT2.append(0.5 * dt/t2_val) #TODO - check for factors
         except KeyError:
             raise Exception(
                 f"Error: T2Star for {key} is not defined."
@@ -933,7 +934,7 @@ def precompute_dissipation_probs(model, ts, dt):
 
         try:
             temp_val = sub.params["temp"].get_value()
-            pTemp.append(1/temp_val * dt) #TODO - check if there is a factor of Kb
+            pTemp.append(1 * dt/temp_val) #TODO - check if there is a factor of Kb
         except KeyError:
             raise Exception(
                 f"Error: Temp for {key} is not defined."

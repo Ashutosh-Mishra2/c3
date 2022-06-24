@@ -35,6 +35,7 @@ from c3.libraries.propagation import unitary_provider, state_provider
 
 from c3.utils.qt_utils import perfect_single_q_parametric_gate
 
+from c3.libraries.constants import kb, hbar
 
 class Experiment:
     """
@@ -746,9 +747,12 @@ class Experiment:
         )
         counter = 0
         for key in model.subsystems:
+            gamma1 = (0.5/model.subsystems[key].params["t1"].get_value())**0.5
+            gamma2 = (0.5/model.subsystems[key].params["t2star"].get_value())**0.5
+            beta = 1 / (model.subsystems[key].params["temp"].get_value() * kb) 
             cols = tf.convert_to_tensor([
-                model.subsystems[key].collapse_ops["t1"],
-                model.subsystems[key].collapse_ops["t2star"],
+                gamma1 * model.subsystems[key].collapse_ops["t1"],
+                gamma2 *model.subsystems[key].collapse_ops["t2star"],
                 model.subsystems[key].collapse_ops["temp"]
             ], dtype=tf.complex128)
             collapse_ops = collapse_ops.write(counter, cols)
