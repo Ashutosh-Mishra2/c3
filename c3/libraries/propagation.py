@@ -802,14 +802,15 @@ def stochastic_schrodinger_rk4(
     instruction: Instruction,
     collapse_ops: tf.Tensor, 
     psi_init: tf.Tensor,
-    L_dag_L: tf.Tensor
+    L_dag_L: tf.Tensor,
+    plist: tf.Tensor
 ) -> Dict:
     hs_of_t_ts = Hs_of_t(model, generator, instruction, L_dag_L=L_dag_L) 
     hs = hs_of_t_ts["Hs"]
     ts = hs_of_t_ts["ts"]
     dt = hs_of_t_ts["dt"]
 
-    plist = precompute_dissipation_probs(model, ts, dt)
+    #plist = precompute_dissipation_probs(model, ts, dt)
     psi_list = propagate_stochastic_lind(model, hs, collapse_ops, psi_init, ts, dt, L_dag_L, plist)
     return {"states":psi_list, "ts": ts}
 
@@ -907,6 +908,7 @@ def rk4_lind_traj(h, psi, dt, relax_ops, dec_ops, temp_ops, coherent_ev_flag, L_
                     )
     return psi_new
 
+"""
 # TODO - Move this outside as this causes problem in graph mode
 def precompute_dissipation_probs(model, ts, dt):
     # TODO - correct the probability values
@@ -958,5 +960,5 @@ def precompute_dissipation_probs(model, ts, dt):
 
         counter += 1
     return tf.cast(plists, dtype=tf.complex128)
-        
+"""        
      
