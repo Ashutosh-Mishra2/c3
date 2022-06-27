@@ -986,14 +986,12 @@ class Experiment:
         batch_array = tf.TensorArray(
             tf.complex128, size=Num_batches, dynamic_size=False, infer_shape=False
         )
-        i = 0
         ts_list = 0
-        for num in tf.range(Num_batches):
+        for i in range(Num_batches):
             print(f"Tracing shot {i}")
             x = plist_tensor.read(i)
             psi_shots, ts_list = tf.vectorized_map(self.single_stochastic_run, x)
             batch_array = batch_array.write(i, psi_shots)
-            i += 1
         batch_array = batch_array.concat()
         psi_shots = batch_array
 
