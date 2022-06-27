@@ -967,7 +967,9 @@ class Experiment:
                 tf.complex128, size=Num_batches, dynamic_size=False, infer_shape=False
             )
             for i in range(Num_batches):
-                plist_tensor = plist_tensor.write(i, plist_list[i*batch_size: i*batch_size + batch_size])
+                plist_tensor = plist_tensor.write(
+                        i, tf.convert_to_tensor(plist_list[i*batch_size: i*batch_size + batch_size], dtype=tf.complex128)
+                )
             
             psi_shots, ts_list = self.batch_propagate_sde(plist_tensor, Num_batches)
         
@@ -980,22 +982,26 @@ class Experiment:
         return {"states": psi_shots, "ts": ts_list}
     
     @tf.function
-    def batch_propagate_sde(self, plist_list, Num_batches):
+    def batch_propagate_sde(self, plist_tensor, Num_batches):
         batch_array = tf.TensorArray(
             tf.complex128, size=Num_batches, dynamic_size=False, infer_shape=False
         )
-        ts_list = []
-        for i in range(Num_batches):
-            x = plist_list.read(i)
+        i = 0
+        ts_list = 0
+        for num in tf.range(Num_batches):
+            print(f"Tracing shot {i}")
+            x = plist_tensor.read(i)
             psi_shots, ts_list = tf.vectorized_map(self.single_stochastic_run, x)
             batch_array = batch_array.write(i, psi_shots)
+            i += 1
         batch_array = batch_array.concat()
         psi_shots = batch_array
 
         return psi_shots, ts_list
 
-
+    @tf.function
     def single_stochastic_run(self, plist_seq):
+        print("Tracing Single stochastic run")
         sequence = self.sequence
         init_state = self.init_state
         instructions = self.pmap.instructions
