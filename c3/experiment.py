@@ -8,6 +8,7 @@ Given this information an experiment run is simulated, returning either processe
 states or populations.
 """
 
+from ast import Num
 import os
 import copy
 import pickle
@@ -954,6 +955,8 @@ class Experiment:
                     plist_list[-1] = tf.concat([plist_list[-1], plist], 2)
                 counter += 1
 
+        plist_list = tf.convert_to_tensor(plist_list, dtype=tf.complex128)
+
         if not enable_vec_map:
             psi_shots = []
             for num in range(Num_shots):
@@ -963,16 +966,9 @@ class Experiment:
 
         elif enable_vec_map and (batch_size != None):
             Num_batches = int(tf.math.ceil(Num_shots/batch_size))
-            plist_tensor = tf.TensorArray(
-                tf.complex128, size=Num_batches, dynamic_size=False, infer_shape=False
-            )
-            for i in range(Num_batches):
-                plist_tensor = plist_tensor.write(
-                        i, tf.convert_to_tensor(plist_list[i*batch_size: i*batch_size + batch_size], dtype=tf.complex128)
-                )
-            
-            psi_shots, ts_list = self.batch_propagate_sde(plist_tensor, Num_batches)
-        
+            self.Num_batches = Num_batches
+            self.batch_size = batch_size
+            psi_shots, ts_list = self.batch_propagate_sde(plist_list)
         else:
             x = tf.convert_to_tensor(plist_list, dtype=tf.complex128)
             psi_shots, ts_list = tf.vectorized_map(self.single_stochastic_run, x)
@@ -982,20 +978,29 @@ class Experiment:
         return {"states": psi_shots, "ts": ts_list}
     
     @tf.function
-    def batch_propagate_sde(self, plist_tensor, Num_batches):
+    def batch_propagate_sde(
+                self, 
+                plist_tensor: tf.TensorArray, 
+    ):
         batch_array = tf.TensorArray(
-            tf.complex128, size=Num_batches, dynamic_size=False, infer_shape=False
+            tf.complex128, size=self.Num_batches, dynamic_size=False, infer_shape=False
         )
-        ts_list = 0
-        for i in range(Num_batches):
+        batch_size = self.batch_size
+        for i in tf.range(self.Num_batches):
             print(f"Tracing shot {i}")
-            x = plist_tensor.read(i)
+            x = plist_tensor[i*batch_size: i*batch_size + batch_size]
             psi_shots, ts_list = tf.vectorized_map(self.single_stochastic_run, x)
             batch_array = batch_array.write(i, psi_shots)
         batch_array = batch_array.concat()
-        psi_shots = batch_array
 
-        return psi_shots, ts_list
+        return batch_array, ts_list
+
+
+    @tf.function
+    def test_function(self, Num_batches):
+        for i in range(Num_batches):
+            print("Testing")
+        return 0, 0
 
     @tf.function
     def single_stochastic_run(self, plist_seq):
