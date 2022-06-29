@@ -912,9 +912,9 @@ def rk4_lind_traj(h, psi, dt, relax_ops, dec_ops, temp_ops, coherent_ev_flag, L_
         for i in range(len(relax_ops)):
             psi_new = (
                         psi_new 
-                        + tf.linalg.matmul(relax_ops[i],psi) * tf.sqrt(dt/pjk[i][0])
-                        + tf.linalg.matmul(dec_ops[i],psi) *   tf.sqrt(dt/pjk[i][1])
-                        + tf.linalg.matmul(temp_ops[i],psi) *  tf.sqrt(dt/pjk[i][2])
+                        + tf.linalg.matmul(relax_ops[i],psi) * tf.sqrt(1/pjk[i][0])
+                        + tf.linalg.matmul(dec_ops[i],psi) *   tf.sqrt(1/pjk[i][1])
+                        + tf.linalg.matmul(temp_ops[i],psi) *  tf.sqrt(1/pjk[i][2])
                     )
     return psi_new
 
