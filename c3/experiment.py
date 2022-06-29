@@ -888,15 +888,17 @@ class Experiment:
         )
         counter = 0
         for key in model.subsystems:
-            gamma1 = (0.5/model.subsystems[key].params["t1"].get_value())**0.5
-            gamma2 = (0.5/model.subsystems[key].params["t2star"].get_value())**0.5
-            beta = 1 / (model.subsystems[key].params["temp"].get_value() * kb) 
-            cols = tf.convert_to_tensor([
-                gamma1 * model.subsystems[key].collapse_ops["t1"],
-                gamma2 *model.subsystems[key].collapse_ops["t2star"],
-                model.subsystems[key].collapse_ops["temp"]
-            ], dtype=tf.complex128)
-            collapse_ops = collapse_ops.write(counter, cols)
+            #gamma1 = (0.5/model.subsystems[key].params["t1"].get_value())**0.5
+            #gamma2 = (0.5/model.subsystems[key].params["t2star"].get_value())**0.5
+            #beta = 1 / (model.subsystems[key].params["temp"].get_value() * kb) 
+            #cols = tf.convert_to_tensor([
+            #    gamma1 * model.subsystems[key].collapse_ops["t1"],
+            #    gamma2 *model.subsystems[key].collapse_ops["t2star"],
+            #    model.subsystems[key].collapse_ops["temp"]
+            #], dtype=tf.complex128)
+            #collapse_ops = collapse_ops.write(counter, cols)
+            Ls = model.subsystems[key].Ls
+            collapse_ops = collapse_ops.write(counter, Ls)
             counter += 1
 
         collapse_ops = collapse_ops.stack()

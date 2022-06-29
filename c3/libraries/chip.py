@@ -239,6 +239,7 @@ class Qubit(PhysicalComponent):
             Ls.append(L)
         if not Ls:
             raise Exception("No T1 or T2 provided")
+        self.Ls = Ls
         return tf.cast(sum(Ls), tf.complex128)
 
 
@@ -319,6 +320,7 @@ class Resonator(PhysicalComponent):
             Ls.append(L)
         if not Ls:
             raise Exception("No T1 or T2 provided")
+        self.Ls = Ls
         return tf.cast(sum(Ls), tf.complex128)
 
 
