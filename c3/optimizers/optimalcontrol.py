@@ -59,7 +59,8 @@ class OptimalControl(Optimizer):
         fid_func_kwargs={},
         states_solver=False,
         init_state=None,
-        sequence=None
+        sequence=None,
+        readout=False,
     ) -> None:
         if type(algorithm) is str:
             algorithm = algorithms[algorithm]
@@ -84,6 +85,7 @@ class OptimalControl(Optimizer):
         self.state_solver = states_solver
         self.init_state = init_state
         self.sequence = sequence
+        self.readout = readout
         self.run = (
             self.optimize_controls
         )  # Alias the legacy name for the method running the
@@ -191,13 +193,37 @@ class OptimalControl(Optimizer):
             result = self.exp.solve_lindblad_ode(self.init_state, self.sequence)
             states = result["states"]
 
-            goal = self.fid_func(
-                states=states,
-                index=self.index,
-                dims=dims,
-                n_eval=self.evaluation + 1,
-                **self.fid_func_kwargs,
-            )
+            if self.readout:
+                try:
+                    ground_state = self.fid_func_kwargs["ground_state"]
+                except:
+                    raise Exception(
+                        "Specify the ground state to calculate the IQ distance."
+                    )
+                result_g = self.exp.solve_lindblad_ode(ground_state, self.sequence)
+                states_g = result_g["states"]
+                #try:
+                goal = self.fid_func(
+                    states_e=states,
+                    states_g=states_g,
+                    index=self.index,
+                    dims=dims,
+                    n_eval=self.evaluation + 1,
+                    **self.fid_func_kwargs,
+                )
+                #except:
+                #    raise Exception(
+                #        "Use a fidelity function compatible with readout."
+                #    )
+
+            else:
+                goal = self.fid_func(
+                    states=states,
+                    index=self.index,
+                    dims=dims,
+                    n_eval=self.evaluation + 1,
+                    **self.fid_func_kwargs,
+                )
             self.evaluation += 1
         else:
             propagators = self.exp.compute_propagators()

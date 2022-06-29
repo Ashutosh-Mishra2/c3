@@ -1001,7 +1001,7 @@ def swap_and_readout(
 
 @fid_reg_deco
 def state_transfer_from_states(
-    states: dict, index, dims, params, n_eval=-1
+    states: List[tf.Tensor], index, dims, params, n_eval=-1
 ):
     infids = []
     psi_0 = params["psi_0"]
@@ -1017,3 +1017,36 @@ def calculateStateOverlap(psi1, psi2):
         return tf_ketket_fid(psi1, psi2)
 
 
+@fid_reg_deco
+def readout_ode(
+    states_e: List[tf.Tensor],
+    states_g: List[tf.Tensor],
+    index,
+    dims,
+    params,
+    ground_state,
+    n_eval=-1 
+):
+    a_rotated = params["a_rotated"]
+    d_max = params["cutoff_distance"]
+    lindbladian = params["lindbladian"]
+    psi_g = states_g[-1]
+    psi_e = states_e[-1]
+    infids = []
+
+    if lindbladian:
+        alpha0 = tf.linalg.trace(tf.matmul(psi_g, a_rotated))
+        alpha1 = tf.linalg.trace(tf.matmul(psi_e, a_rotated))
+    else:
+        alpha0 = tf.matmul(
+            tf.matmul(tf.transpose(psi_g, conjugate=True), a_rotated), psi_g
+        )[0, 0]
+        alpha1 = tf.matmul(
+            tf.matmul(tf.transpose(psi_e, conjugate=True), a_rotated), psi_e
+        )[0, 0]
+    
+    distance = tf.abs(alpha0 - alpha1)
+    iq_infid = tf.exp(-distance / d_max)
+    iq_infid = tf.cast(iq_infid, dtype=tf.complex128)
+    infids.append(iq_infid)
+    return tf.abs(tf.reduce_mean(infids))
