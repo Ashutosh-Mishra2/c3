@@ -750,16 +750,22 @@ def propagate_lind(Hs, col, rho, ts, dt):
     rho_t = rho
     for index in tf.range(ts.shape[0]):
         h = tf.slice(Hs, [2*index, 0, 0], [3, Hs.shape[1], Hs.shape[2]])
-        rho_t = rk4_step_lind(lindblad_step, rho_t, h, col, dt)
+        rho_t = rk4_step_lind(lindblad_step, rho_t, h, dt, col=col)
         rho_list = rho_list.write(index, rho_t)
     return rho_list.stack()
 
 # TODO - make a RK45 algorithm with interpolation
-def rk4_step_lind(func, rho, h, col, dt):
-    k1 = func(rho, h[0], col, dt)
-    k2 = func(rho + k1 / 2.0, h[1], col, dt)
-    k3 = func(rho + k2 / 2.0, h[1], col, dt)
-    k4 = func(rho + k3, h[2], col, dt)
+def rk4_step_lind(func, rho, h, dt, col=None):
+    if col == None:
+        k1 = func(rho, h[0], dt)
+        k2 = func(rho + k1 / 2.0, h[1], dt)
+        k3 = func(rho + k2 / 2.0, h[1], dt)
+        k4 = func(rho + k3, h[2], dt)
+    else:
+        k1 = func(rho, h[0], col, dt)
+        k2 = func(rho + k1 / 2.0, h[1], col, dt)
+        k3 = func(rho + k2 / 2.0, h[1], col, dt)
+        k4 = func(rho + k3, h[2], col, dt)
     rho = rho + (k1 + 2 * k2 + 2 * k3 + k4) / 6.0
     return rho
 
@@ -853,6 +859,10 @@ def propagate_stochastic_lind(model, hs, collapse_ops, psi_init, ts, dt, L_dag_L
     
     return psi_list.stack()
 
+def stochastic_step(psi, h, dt):
+    I_op = tf.eye(num_rows=h.shape[0], num_columns=h.shape[1], dtype=tf.complex128)
+    return tf.matmul((I_op - 1j*h), psi)*dt
+
 
 def rk4_lind_traj(h, psi, dt, relax_ops, dec_ops, temp_ops, coherent_ev_flag, L_dag_L):
     """
@@ -895,16 +905,16 @@ def rk4_lind_traj(h, psi, dt, relax_ops, dec_ops, temp_ops, coherent_ev_flag, L_
 
     pj = tf.reduce_sum(pjk) * dt
 
-    psi_new = coherent_ev_flag * rk4_step(h, psi, dt) * (1/tf.sqrt(1 - pj))
+    psi_new = coherent_ev_flag * rk4_step_lind(stochastic_step, psi, h, dt) * (1/tf.sqrt(1 - pj))
 
     # TODO - check if the condition below is correct. I have used this just for the time being.
     if tf.reduce_prod(pjk) != 0:
         for i in range(len(relax_ops)):
             psi_new = (
                         psi_new 
-                        + tf.linalg.matmul(relax_ops[i],psi) * (1/tf.sqrt(pjk[i][0]))
-                        + tf.linalg.matmul(dec_ops[i],psi) * (1/tf.sqrt(pjk[i][1]))
-                        + tf.linalg.matmul(temp_ops[i],psi) * (1/tf.sqrt(pjk[i][2]))
+                        + tf.linalg.matmul(relax_ops[i],psi) * tf.sqrt(dt/pjk[i][0])
+                        + tf.linalg.matmul(dec_ops[i],psi) *   tf.sqrt(dt/pjk[i][1])
+                        + tf.linalg.matmul(temp_ops[i],psi) *  tf.sqrt(dt/pjk[i][2])
                     )
     return psi_new
 
