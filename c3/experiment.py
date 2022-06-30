@@ -1061,14 +1061,14 @@ class Experiment:
         for key, sub in model.subsystems.items():
             try:
                 t1_val = sub.params["t1"].get_value()
-                pT1.append(0.5 * dt/t1_val)
+                pT1.append(dt/t1_val)
             except KeyError:
                 raise Exception(
                     f"Error: T1 for {key} is not defined."
                 )
             try:
                 t2_val = sub.params["t2star"].get_value()
-                pT2.append(0.5 * dt/t2_val)
+                pT2.append(dt/t2_val)
             except KeyError:
                 raise Exception(
                     f"Error: T2Star for {key} is not defined."

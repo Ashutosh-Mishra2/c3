@@ -715,11 +715,11 @@ def calculate_sum_Hs(h0, hks, cflds, L_dag_L=None):
     )
     hk = tf.multiply(control_field, hks)
     Hs = tf.reduce_sum(hk, axis=1)
-    if L_dag_L is not None:
-        #for values in L_dag_L:
-        #    for col in values:
-        #        Hs = Hs - 1j * 0.5 * col
-        return Hs + h0 -1j * 0.5 * tf.reduce_sum(tf.reduce_sum(L_dag_L, axis=0), axis=0)
+    #if L_dag_L is not None:
+    #    #for values in L_dag_L:
+    #    #    for col in values:
+    #    #        Hs = Hs - 1j * 0.5 * col
+    #    return Hs + h0 -1j * tf.reduce_sum(tf.reduce_sum(L_dag_L, axis=0), axis=0)
     return Hs + h0
 
 # TODO - change this function to include interpolation
@@ -861,8 +861,8 @@ def propagate_stochastic_lind(model, hs, collapse_ops, psi_init, ts, dt, L_dag_L
 
 def stochastic_step(psi, h, dt):
     I_op = tf.eye(num_rows=h.shape[0], num_columns=h.shape[1], dtype=tf.complex128)
-    return tf.matmul((I_op - 1j*h), psi)*dt
-
+    #return tf.matmul((I_op - 1j*h), psi)*dt
+    return -1j*dt*tf.matmul(h, psi)
 
 def rk4_lind_traj(h, psi, dt, relax_ops, dec_ops, temp_ops, coherent_ev_flag, L_dag_L):
     """
@@ -879,7 +879,7 @@ def rk4_lind_traj(h, psi, dt, relax_ops, dec_ops, temp_ops, coherent_ev_flag, L_
     """
     # TODO - check for normalization of the states
     # TODO - What happens if two of them become one at the same time
-
+    """
     pjk = []
     for values in L_dag_L:
         del_pk_T1 = tf.matmul(
@@ -904,18 +904,20 @@ def rk4_lind_traj(h, psi, dt, relax_ops, dec_ops, temp_ops, coherent_ev_flag, L_
         pjk.append([del_pk_T1, del_pk_T2, del_pk_Temp])
 
     pj = tf.reduce_sum(pjk) * dt
-
-    psi_new = coherent_ev_flag * rk4_step_lind(stochastic_step, psi, h, dt) * (1/tf.sqrt(1 - pj))
-
+    """
+    #psi_new = coherent_ev_flag * rk4_step_lind(stochastic_step, psi, h, dt) #* (1/tf.sqrt(1 - pj))
+    psi_new = rk4_step_lind(stochastic_step, psi, h, dt)
+    
+    print(tf.matmul(tf.transpose(psi_new, conjugate=True), psi_new))
     # TODO - check if the condition below is correct. I have used this just for the time being.
-    if tf.reduce_prod(pjk) != 0:
-        for i in range(len(relax_ops)):
-            psi_new = (
-                        psi_new 
-                        + tf.linalg.matmul(relax_ops[i],psi) * tf.sqrt(1/pjk[i][0])
-                        + tf.linalg.matmul(dec_ops[i],psi) *   tf.sqrt(1/pjk[i][1])
-                        + tf.linalg.matmul(temp_ops[i],psi) *  tf.sqrt(1/pjk[i][2])
-                    )
+    #if tf.reduce_prod(pjk) != 0:
+    #    for i in range(len(relax_ops)):
+    #        psi_new = (
+    #                    psi_new 
+    #                    + tf.linalg.matmul(relax_ops[i],psi) * tf.sqrt(1/pjk[i][0])
+    #                    + tf.linalg.matmul(dec_ops[i],psi) *   tf.sqrt(1/pjk[i][1])
+    #                    + tf.linalg.matmul(temp_ops[i],psi) *  tf.sqrt(1/pjk[i][2])
+    #                )
     return psi_new
 
 """
