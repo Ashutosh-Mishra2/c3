@@ -1,6 +1,5 @@
 """Library of fidelity functions."""
 
-from turtle import distance
 import numpy as np
 import tensorflow as tf
 from typing import List, Dict
@@ -1050,3 +1049,59 @@ def readout_ode(
     iq_infid = tf.cast(iq_infid, dtype=tf.complex128)
     infids.append(iq_infid)
     return tf.abs(tf.reduce_mean(infids))
+
+
+@fid_reg_deco
+def swap_and_readout_ode(
+    states_e: List[tf.Tensor],
+    states_g: List[tf.Tensor],
+    index,
+    dims,
+    params,
+    ground_state,
+    n_eval=-1 
+):
+    print("Calculating fidelity")
+    infids = []
+    a_rotated = params["a_rotated"]
+    d_max = params["cutoff_distance"]
+    lindbladian = params["lindbladian"]
+    swap_position = params["swap_pos"]
+    swap_cost = params["swap_cost"]
+    swap_target_e = params["swap_target_state_excited"]
+    swap_target_g = params["swap_target_state_ground"]
+
+
+    swap_cost = tf.constant(swap_cost, dtype=tf.complex128)
+    infid = tf.convert_to_tensor(0.0, dtype=tf.complex128)
+
+    psi_g = states_g[-1]
+    psi_e = states_e[-1]
+    if lindbladian:
+        alpha0 = tf.linalg.trace(tf.matmul(psi_g, a_rotated))
+        alpha1 = tf.linalg.trace(tf.matmul(psi_e, a_rotated))
+    else:
+        alpha0 = tf.matmul(
+            tf.matmul(tf.transpose(psi_g, conjugate=True), a_rotated), psi_g
+        )[0, 0]
+        alpha1 = tf.matmul(
+            tf.matmul(tf.transpose(psi_e, conjugate=True), a_rotated), psi_e
+        )[0, 0]
+    
+    distance = tf.abs(alpha0 - alpha1)
+    iq_infid = tf.exp(-distance / d_max)
+    iq_infid = tf.cast(iq_infid, dtype=tf.complex128)
+    infid += iq_infid
+
+    overlap_e = calculateStateOverlap(states_e[swap_position], swap_target_e)
+    overlap_g = calculateStateOverlap(states_g[swap_position], swap_target_g)
+
+    swap_infid = 1 - (overlap_e + overlap_g)/2
+    swap_infid = tf.cast(swap_infid, dtype=tf.complex128)
+    infid += swap_infid
+
+    infids.append(infid)
+
+    return tf.abs(tf.reduce_mean(infids))
+
+
