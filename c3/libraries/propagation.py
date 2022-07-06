@@ -666,6 +666,13 @@ def lindblad_rk4(
     Hs = Hs_dict["Hs"]
     ts = Hs_dict["ts"]
     dt = Hs_dict["dt"]
+
+    counter = 0
+    for h in Hs:
+        if tf.reduce_any(tf.transpose(h, conjugate=True) != h):
+            print("Non hermitian Hamiltonian at", counter)
+        counter += 1
+
     rhos = propagate_lind(Hs, collapse_ops, init_state, ts, dt)
 
     return {"states": rhos, "ts": ts}
@@ -715,11 +722,6 @@ def calculate_sum_Hs(h0, hks, cflds, L_dag_L=None):
     )
     hk = tf.multiply(control_field, hks)
     Hs = tf.reduce_sum(hk, axis=1)
-    #if L_dag_L is not None:
-    #    #for values in L_dag_L:
-    #    #    for col in values:
-    #    #        Hs = Hs - 1j * 0.5 * col
-    #    return Hs + h0 -1j * tf.reduce_sum(tf.reduce_sum(L_dag_L, axis=0), axis=0)
     return Hs + h0
 
 # TODO - change this function to include interpolation
@@ -769,6 +771,12 @@ def rk4_step_lind(func, rho, h, dt, col=None):
     rho = rho + (k1 + 2 * k2 + 2 * k3 + k4) / 6.0
     return rho
 
+def finite_diff_step(func, rho, h, dt, col=None):
+    if col==None:
+        return rho + func(rho, h, dt)
+    else:
+        return rho + func(rho, h, dt, col)
+
 
 def lindblad_step(rho, h, col_ops, dt):
     del_rho = -1j * commutator(h, rho)
@@ -811,10 +819,16 @@ def stochastic_schrodinger_rk4(
     L_dag_L: tf.Tensor,
     plist: tf.Tensor
 ) -> Dict:
-    hs_of_t_ts = Hs_of_t(model, generator, instruction, L_dag_L=L_dag_L) 
+    hs_of_t_ts = Hs_of_t(model, generator, instruction, L_dag_L=None) 
     hs = hs_of_t_ts["Hs"]
     ts = hs_of_t_ts["ts"]
     dt = hs_of_t_ts["dt"]
+
+    counter = 0
+    for h in hs:
+        if tf.reduce_any(tf.transpose(h, conjugate=True) != h):
+            print("Non hermitian Hamiltonian at", counter)
+        counter += 1
 
     #plist = precompute_dissipation_probs(model, ts, dt)
     psi_list = propagate_stochastic_lind(model, hs, collapse_ops, psi_init, ts, dt, L_dag_L, plist)
@@ -829,40 +843,19 @@ def propagate_stochastic_lind(model, hs, collapse_ops, psi_init, ts, dt, L_dag_L
                     dynamic_size=False, 
                     infer_shape=False
     )
-
     for index in tf.range(ts.shape[0]):
-        relax_op_list = []
-        dec_op_list = []
-        temp_op_list = []
-        coherent_ev_flag = 1
-        counter = 0
-        for key in model.subsystems:
-            time1 = plist[counter][0][index]
-            time2 = plist[counter][1][index]
-            time_temp = plist[counter][2][index]
-
-            relax_op = time1 * collapse_ops[counter][0]
-            dec_op = time2 * collapse_ops[counter][1]
-            temp_op = time_temp * collapse_ops[counter][2]
-
-            relax_op_list.append(relax_op)
-            dec_op_list.append(dec_op)
-            temp_op_list.append(temp_op)
-            
-            coherent_ev_flag = coherent_ev_flag * (1 - time1) * (1 - time2) * (1 - time_temp)
-
-            counter += 1
-            
         h = tf.slice(hs, [2*index, 0, 0], [3, hs.shape[1], hs.shape[2]])
-        psi = rk4_lind_traj(h, psi, dt, relax_op_list, dec_op_list, temp_op_list, coherent_ev_flag, L_dag_L)
+        psi = rk4_step_lind(stochastic_step, psi, h, dt)
+        psi = psi/tf.linalg.norm(psi)
         psi_list = psi_list.write(index, psi)
     
     return psi_list.stack()
 
 def stochastic_step(psi, h, dt):
-    I_op = tf.eye(num_rows=h.shape[0], num_columns=h.shape[1], dtype=tf.complex128)
-    #return tf.matmul((I_op - 1j*h), psi)*dt
-    return -1j*dt*tf.matmul(h, psi)
+    #psi_new = -1j*dt*commutator(h, psi)
+    psi_new = - 1j*dt*tf.matmul(h, psi)
+    return psi_new
+
 
 def rk4_lind_traj(h, psi, dt, relax_ops, dec_ops, temp_ops, coherent_ev_flag, L_dag_L):
     """
