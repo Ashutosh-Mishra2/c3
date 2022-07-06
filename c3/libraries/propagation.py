@@ -813,8 +813,6 @@ def anticommutator(A, B):
 def interpolateSignal(ts, sig, interpolate_res):
     dt = ts[1] - ts[0]
     ts_interp = tf.linspace(ts[0], ts[-1] + dt, tf.shape(ts)[0] * interpolate_res + 1)
-    #sig_fun = interpolate.interp1d(ts, sig, fill_value="extrapolate")
-    #return sig_fun(ts_interp)
     return tfp.math.interp_regular_1d_grid(
         ts_interp,
         ts[0],
@@ -902,8 +900,7 @@ def propagate_stochastic_lind(model, hs, collapse_ops, psi_init, ts, dt, L_dag_L
     return psi_list.stack()
 
 def stochastic_step(psi, h, dt):
-    I_op = tf.eye(num_rows=h.shape[0], num_columns=h.shape[1], dtype=tf.complex128)
-    return tf.matmul((I_op - 1j*h), psi)*dt
+    return - 1j*tf.matmul(h, psi)*dt
 
 
 def rk4_lind_traj(h, psi, dt, relax_ops, dec_ops, temp_ops, coherent_ev_flag, L_dag_L, solver="rk4"):
