@@ -1,4 +1,5 @@
 "A library for propagators and closely related functions"
+from posixpath import split
 import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tfp
@@ -661,12 +662,19 @@ def lindblad_rk4(
     instr: Instruction,
     collapse_ops: tf.Tensor,
     init_state=None,
+    solver="rk4",
 ) -> Dict:
-    Hs_dict = Hs_of_t(model, gen, instr)
+
+    if solver == "rk4":
+        interpolate_res = 2
+    elif solver == "rk38":
+        interpolate_res = 3
+
+    Hs_dict = Hs_of_t(model, gen, instr, interpolate_res=interpolate_res)
     Hs = Hs_dict["Hs"]
     ts = Hs_dict["ts"]
     dt = Hs_dict["dt"]
-    rhos = propagate_lind(Hs, collapse_ops, init_state, ts, dt)
+    rhos = propagate_lind(Hs, collapse_ops, init_state, ts, dt, solver=solver)
 
     return {"states": rhos, "ts": ts}
 
@@ -716,9 +724,6 @@ def calculate_sum_Hs(h0, hks, cflds, L_dag_L=None):
     hk = tf.multiply(control_field, hks)
     Hs = tf.reduce_sum(hk, axis=1)
     if L_dag_L is not None:
-        #for values in L_dag_L:
-        #    for col in values:
-        #        Hs = Hs - 1j * 0.5 * col
         return Hs + h0 -1j * 0.5 * tf.reduce_sum(tf.reduce_sum(L_dag_L, axis=0), axis=0)
     return Hs + h0
 
@@ -740,7 +745,7 @@ def get_Hs_of_t_no_cflds(model, gen, instr, prop_res):
     dt = tf.constant(ts[1 * prop_res].numpy() - ts[0].numpy(), dtype=tf.complex128)
     return {"Hs": Hs, "ts": ts[::prop_res], "dt": dt}
 
-def propagate_lind(Hs, col, rho, ts, dt):
+def propagate_lind(Hs, col, rho, ts, dt, solver="rk4"):
     rho_list = tf.TensorArray(
                     tf.complex128, 
                     size=ts.shape[0], 
@@ -749,8 +754,12 @@ def propagate_lind(Hs, col, rho, ts, dt):
     )
     rho_t = rho
     for index in tf.range(ts.shape[0]):
-        h = tf.slice(Hs, [2*index, 0, 0], [3, Hs.shape[1], Hs.shape[2]])
-        rho_t = rk4_step_lind(lindblad_step, rho_t, h, dt, col=col)
+        if solver =="rk38":
+            h = tf.slice(Hs, [3*index, 0, 0], [4, Hs.shape[1], Hs.shape[2]])
+            rho_t = rk38_step_lind(lindblad_step, rho_t, h, dt, col=col)
+        else:
+            h = tf.slice(Hs, [2*index, 0, 0], [3, Hs.shape[1], Hs.shape[2]])
+            rho_t = rk4_step_lind(lindblad_step, rho_t, h, dt, col=col)
         rho_list = rho_list.write(index, rho_t)
     return rho_list.stack()
 
@@ -767,6 +776,20 @@ def rk4_step_lind(func, rho, h, dt, col=None):
         k3 = func(rho + k2 / 2.0, h[1], col, dt)
         k4 = func(rho + k3, h[2], col, dt)
     rho = rho + (k1 + 2 * k2 + 2 * k3 + k4) / 6.0
+    return rho
+
+def rk38_step_lind(func, rho, h, dt, col=None):
+    if col == None:
+        k1 = func(rho, h[0], dt)
+        k2 = func(rho + k1 / 3.0, h[1], dt)
+        k3 = func(rho + (-k1 / 3.0) + k2, h[2], dt)
+        k4 = func(rho + k1 - k2 + k3, h[3], dt)
+    else:
+        k1 = func(rho, h[0], col, dt)
+        k2 = func(rho + k1 / 3.0, h[1], col, dt)
+        k3 = func(rho + (-k1 / 3.0) + k2, h[2], col, dt)
+        k4 = func(rho + k1 -k2 + k3, h[3], col, dt)
+    rho = rho + (k1 + 3 * k2 + 3 * k3 + k4) / 8.0
     return rho
 
 
@@ -809,19 +832,35 @@ def stochastic_schrodinger_rk4(
     collapse_ops: tf.Tensor, 
     psi_init: tf.Tensor,
     L_dag_L: tf.Tensor,
-    plist: tf.Tensor
+    plist: tf.Tensor,
+    solver="rk4",
 ) -> Dict:
-    hs_of_t_ts = Hs_of_t(model, generator, instruction, L_dag_L=L_dag_L) 
+
+    if solver == "rk4":
+        interpolate_res = 2
+    elif solver == "rk38":
+        interpolate_res = 3
+
+    hs_of_t_ts = Hs_of_t(model, generator, instruction, L_dag_L=L_dag_L, interpolate_res=interpolate_res) 
     hs = hs_of_t_ts["Hs"]
     ts = hs_of_t_ts["ts"]
     dt = hs_of_t_ts["dt"]
 
-    #plist = precompute_dissipation_probs(model, ts, dt)
-    psi_list = propagate_stochastic_lind(model, hs, collapse_ops, psi_init, ts, dt, L_dag_L, plist)
+    psi_list = propagate_stochastic_lind(
+                        model, 
+                        hs, 
+                        collapse_ops, 
+                        psi_init, 
+                        ts, 
+                        dt, 
+                        L_dag_L, 
+                        plist, 
+                        solver=solver
+    )
     return {"states":psi_list, "ts": ts}
 
 
-def propagate_stochastic_lind(model, hs, collapse_ops, psi_init, ts, dt, L_dag_L, plist):
+def propagate_stochastic_lind(model, hs, collapse_ops, psi_init, ts, dt, L_dag_L, plist, solver="rk4"):
     psi = psi_init
     psi_list = tf.TensorArray(
                     tf.complex128,
@@ -852,9 +891,12 @@ def propagate_stochastic_lind(model, hs, collapse_ops, psi_init, ts, dt, L_dag_L
             coherent_ev_flag = coherent_ev_flag * (1 - time1) * (1 - time2) * (1 - time_temp)
 
             counter += 1
-            
-        h = tf.slice(hs, [2*index, 0, 0], [3, hs.shape[1], hs.shape[2]])
-        psi = rk4_lind_traj(h, psi, dt, relax_op_list, dec_op_list, temp_op_list, coherent_ev_flag, L_dag_L)
+        
+        if solver == "rk38":
+            h = tf.slice(hs, [3*index, 0, 0], [4, hs.shape[1], hs.shape[2]])
+        else:
+            h = tf.slice(hs, [2*index, 0, 0], [3, hs.shape[1], hs.shape[2]])
+        psi = rk4_lind_traj(h, psi, dt, relax_op_list, dec_op_list, temp_op_list, coherent_ev_flag, L_dag_L, solver=solver)
         psi_list = psi_list.write(index, psi)
     
     return psi_list.stack()
@@ -864,7 +906,7 @@ def stochastic_step(psi, h, dt):
     return tf.matmul((I_op - 1j*h), psi)*dt
 
 
-def rk4_lind_traj(h, psi, dt, relax_ops, dec_ops, temp_ops, coherent_ev_flag, L_dag_L):
+def rk4_lind_traj(h, psi, dt, relax_ops, dec_ops, temp_ops, coherent_ev_flag, L_dag_L, solver="rk4"):
     """
     Calculates the single time step lindbladian evoultion
     of a state vector.
@@ -905,8 +947,12 @@ def rk4_lind_traj(h, psi, dt, relax_ops, dec_ops, temp_ops, coherent_ev_flag, L_
 
     pj = tf.reduce_sum(pjk) * dt
 
-    psi_new = coherent_ev_flag * rk4_step_lind(stochastic_step, psi, h, dt) * (1/tf.sqrt(1 - pj))
+    if solver == "rk38":
+        psi_new = coherent_ev_flag * rk38_step_lind(stochastic_step, psi, h, dt) * (1/tf.sqrt(1 - pj))
+    else:
+        psi_new = coherent_ev_flag * rk4_step_lind(stochastic_step, psi, h, dt) * (1/tf.sqrt(1 - pj))
     if coherent_ev_flag == 1:
+        psi_new = psi_new/tf.norm(psi_new)
         psi_new = psi_new/tf.norm(psi_new)
     # TODO - check if the condition below is correct. I have used this just for the time being.
     if tf.reduce_prod(pjk) != 0:
@@ -918,58 +964,3 @@ def rk4_lind_traj(h, psi, dt, relax_ops, dec_ops, temp_ops, coherent_ev_flag, L_
                         + tf.linalg.matmul(temp_ops[i],psi) *  tf.sqrt(1/pjk[i][2])
                     )
     return psi_new
-
-"""
-# TODO - Move this outside as this causes problem in graph mode
-def precompute_dissipation_probs(model, ts, dt):
-    # TODO - correct the probability values
-    pT1 = []
-    pT2 = []
-    pTemp = []
-
-    dt = tf.cast(dt, dtype=tf.float64)
-    counter = 0
-    for key, sub in model.subsystems.items():
-        try:
-            t1_val = sub.params["t1"].get_value()
-            pT1.append(0.5 * dt/t1_val) #TODO - check for factors
-        except KeyError:
-            raise Exception(
-                f"Error: T1 for {key} is not defined."
-            )
-        try:
-            t2_val = sub.params["t2star"].get_value()
-            pT2.append(0.5 * dt/t2_val) #TODO - check for factors
-        except KeyError:
-            raise Exception(
-                f"Error: T2Star for {key} is not defined."
-            )
-
-        try:
-            temp_val = sub.params["temp"].get_value()
-            pTemp.append(1 * dt/temp_val) #TODO - check if there is a factor of Kb
-        except KeyError:
-            raise Exception(
-                f"Error: Temp for {key} is not defined."
-            )
-        counter += 1
-
-    plists = []
-    g = tf.random.get_global_generator()
-    counter = 0
-
-    
-    for key in model.subsystems:
-        plists.append([])
-        temp1 = g.uniform(shape=[ts.shape[0]], dtype=tf.float64)
-        temp2 = g.uniform(shape=[ts.shape[0]], dtype=tf.float64)
-        tempt = g.uniform(shape=[ts.shape[0]], dtype=tf.float64)
-
-        plists[counter].append(tf.math.floor((tf.math.sign(-temp1 + pT1[counter]) + 1)/2))
-        plists[counter].append(tf.math.floor((tf.math.sign(-temp2 + pT2[counter]) + 1)/2))
-        plists[counter].append(tf.math.floor((tf.math.sign(-tempt + pTemp[counter]) + 1)/2))
-
-        counter += 1
-    return tf.cast(plists, dtype=tf.complex128)
-"""        
-     

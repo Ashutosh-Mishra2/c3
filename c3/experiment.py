@@ -662,7 +662,7 @@ class Experiment:
         trace = np.trace(np.matmul(rho, oper))
         return [[np.real(trace)]]  # ,[np.imag(trace)]]
     
-    def solve_lindblad_ode(self, init_state, sequence):
+    def solve_lindblad_ode(self, init_state, sequence, solver="rk4"):
         """
         Solve the Lindblad master equation by integrating the differential
         equation of the density matrix
@@ -700,7 +700,7 @@ class Experiment:
                     f"C3:Error: Gate '{gate}' is not defined."
                     f" Available gates are:\n {list(instructions.keys())}."
                 )
-            result = self.propagation(model, generator, instr, collapse_ops, rho_init)
+            result = self.propagation(model, generator, instr, collapse_ops, rho_init, solver=solver)
             rho_list = tf.concat([rho_list, result["states"]], 0)
             ts_list = tf.concat([ts_list, tf.add(result["ts"], ts_init)], 0)
             rho_init = result["states"][-1]
@@ -709,148 +709,14 @@ class Experiment:
         # TODO - Add Frame rotation and dephasing strength
         return {"states": rho_list, "ts": ts_list}
 
-    
-    #def solve_stochastic_ode(self, init_state, sequence, Num_shots, enable_vec_map=False, batch_size=None):
-    #    """
-    #    Solve the Lindblad master equation by integrating the differential
-    #    equation of the density matrix
-    #   
-    #    Returns
-    #    -------
-    #    List
-    #        A List of states for the time evolution.
-    #    """
-    #
-    #    model = self.pmap.model
-    #    if model.lindbladian:
-    #        raise Exception(
-    #            "model.lindbladian is True."
-    #            + "This method uses state vectors instead of density matrices."
-    #        )
-    #  
-    #    model.controllability = self.use_control_fields
-    #
-    #    self.set_prop_method("stochastic_schrodinger_rk4")
-    #
-    #    self.sequence = sequence
-    #    self.init_state = init_state
-    #
-    #    # TODO - Multiply factors of gamma to the collapse operators
-    #    
-    #    N_sub = len(model.subsystems)
-    #
-    #    collapse_ops = tf.TensorArray(
-    #                    tf.complex128,
-    #                    size=N_sub,
-    #                    dynamic_size=False, 
-    #                    infer_shape=False
-    #    )
-    #    counter = 0
-    #    for key in model.subsystems:
-    #        gamma1 = (0.5/model.subsystems[key].params["t1"].get_value())**0.5
-    #        gamma2 = (0.5/model.subsystems[key].params["t2star"].get_value())**0.5
-    #        beta = 1 / (model.subsystems[key].params["temp"].get_value() * kb) 
-    #        cols = tf.convert_to_tensor([
-    #            gamma1 * model.subsystems[key].collapse_ops["t1"],
-    #            gamma2 *model.subsystems[key].collapse_ops["t2star"],
-    #            model.subsystems[key].collapse_ops["temp"]
-    #        ], dtype=tf.complex128)
-    #        collapse_ops = collapse_ops.write(counter, cols)
-    #        counter += 1
-    #
-    #    collapse_ops = collapse_ops.stack()
-    #    self.collapse_ops = collapse_ops
-    #    
-    #
-    #    L_dag_L = []
-    #    counter = 0
-    #    for key in model.subsystems:
-    #        cols = [
-    #            tf.matmul(
-    #            tf.transpose(collapse_ops[counter][0], conjugate=True),
-    #            collapse_ops[counter][0]
-    #            ),
-    #            tf.matmul(
-    #            tf.transpose(collapse_ops[counter][1], conjugate=True),
-    #            collapse_ops[counter][1]
-    #            ),
-    #            tf.matmul(
-    #            tf.transpose(collapse_ops[counter][2], conjugate=True),
-    #            collapse_ops[counter][2]
-    #            )
-    #        ]
-    #        L_dag_L.append(cols)
-    #        counter += 1
-    #    self.L_dag_L = L_dag_L
-    #    
-    #
-    #    if not enable_vec_map:
-    #        psi_shots = []
-    #        for num in range(Num_shots):
-    #            print(f"Running shot {num}")
-    #            psi_list, ts_list = self.single_stochastic_run((sequence, init_state))
-    #            psi_shots.append(psi_list)
-    #    
-    #    elif enable_vec_map and (batch_size != None):
-    #        Num_batches = int(tf.math.ceil(Num_shots/batch_size))
-    #        batch_array = tf.TensorArray(
-    #            tf.complex128, size=Num_batches, dynamic_size=False, infer_shape=False
-    #        )
-    #        for i in range(Num_batches):
-    #            x = tf.constant([i for i in range(batch_size)])
-    #            psi_shots, ts_list = tf.vectorized_map(self.single_stochastic_run, x)
-    #            batch_array = batch_array.write(i, psi_shots)
-    #        batch_array = batch_array.concat()
-    #        psi_shots = batch_array
-    #        
-    #    else:
-    #        x = tf.constant([i for i in range(Num_shots)])
-    #        psi_shots, ts_list = tf.vectorized_map(self.single_stochastic_run, x)
-    #
-    #
-    #    # TODO - Add Frame rotation and dephasing strength
-    #    return {"states": psi_shots, "ts": ts_list}
-    #
-    
-    #@tf.function
-    #def single_stochastic_run(self, x):
-    #    sequence = self.sequence
-    #    init_state = self.init_state
-    #    instructions = self.pmap.instructions
-    #    model = self.pmap.model
-    #    generator = self.pmap.generator
-    #    collapse_ops = self.collapse_ops
-    #    L_dag_L = self.L_dag_L
-    #
-    #    psi_init = init_state
-    #    ts_init = tf.constant(0.0, dtype=tf.complex128)
-    #
-    #    psi_list = tf.expand_dims(psi_init, 0)
-    #    ts_list = [ts_init]
-    #
-    #    for gate in sequence:
-    #        try:
-    #            instr = instructions[gate]
-    #        except KeyError:
-    #            raise Exception(
-    #                f"C3:Error: Gate '{gate}' is not defined."
-    #                f" Available gates are:\n {list(instructions.keys())}."
-    #            )
-    #        result = self.propagation(model, generator, instr, collapse_ops, psi_init, L_dag_L)
-    #        psi_list = tf.concat([psi_list,  result["states"]], 0)
-    #        ts_list = tf.concat([ts_list, tf.add(result["ts"], ts_init)], 0)
-    #        psi_init = result["states"][-1]
-    #        ts_init = result["ts"][-1]
-    #    return psi_list, ts_list
-        
-
     def solve_stochastic_ode(
         self, 
         init_state, 
         sequence, 
         Num_shots, 
         enable_vec_map=False, 
-        batch_size=None
+        batch_size=None,
+        solver="rk4"
     ):
         """
         Solve the Lindblad master equation by integrating the differential
@@ -875,6 +741,7 @@ class Experiment:
 
         self.sequence = sequence
         self.init_state = init_state
+        self.solver = solver
 
         # TODO - Multiply factors of gamma to the collapse operators
         
@@ -888,15 +755,6 @@ class Experiment:
         )
         counter = 0
         for key in model.subsystems:
-            #gamma1 = (0.5/model.subsystems[key].params["t1"].get_value())**0.5
-            #gamma2 = (0.5/model.subsystems[key].params["t2star"].get_value())**0.5
-            #beta = 1 / (model.subsystems[key].params["temp"].get_value() * kb) 
-            #cols = tf.convert_to_tensor([
-            #    gamma1 * model.subsystems[key].collapse_ops["t1"],
-            #    gamma2 *model.subsystems[key].collapse_ops["t2star"],
-            #    model.subsystems[key].collapse_ops["temp"]
-            #], dtype=tf.complex128)
-            #collapse_ops = collapse_ops.write(counter, cols)
             Ls = model.subsystems[key].Ls
             collapse_ops = collapse_ops.write(counter, Ls)
             counter += 1
@@ -1014,6 +872,7 @@ class Experiment:
         collapse_ops = self.collapse_ops
         L_dag_L = self.L_dag_L
         ts_len = self.ts_len
+        solver = self.solver
 
         psi_init = init_state
         ts_init = tf.constant(0.0, dtype=tf.complex128)
@@ -1039,7 +898,8 @@ class Experiment:
                             collapse_ops=collapse_ops, 
                             psi_init=psi_init, 
                             L_dag_L=L_dag_L, 
-                            plist=plist_seq[:,:,ts_last:ts_last + ts_len[gate]]
+                            plist=plist_seq[:,:,ts_last:ts_last + ts_len[gate]],
+                            solver=solver
             )
             psi_list = tf.concat([psi_list,  result["states"]], 0)
             ts_list = tf.concat([ts_list, tf.add(result["ts"], ts_init)], 0)
