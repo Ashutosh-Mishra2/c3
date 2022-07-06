@@ -906,7 +906,8 @@ def rk4_lind_traj(h, psi, dt, relax_ops, dec_ops, temp_ops, coherent_ev_flag, L_
     pj = tf.reduce_sum(pjk) * dt
 
     psi_new = coherent_ev_flag * rk4_step_lind(stochastic_step, psi, h, dt) * (1/tf.sqrt(1 - pj))
-
+    if coherent_ev_flag == 1:
+        psi_new = psi_new/tf.norm(psi_new)
     # TODO - check if the condition below is correct. I have used this just for the time being.
     if tf.reduce_prod(pjk) != 0:
         for i in range(len(relax_ops)):
