@@ -1010,7 +1010,7 @@ def state_transfer_from_states(
     return tf.reduce_max(tf.math.real(infids))
 
 def calculateStateOverlap(psi1, psi2):
-    if tf.shape(psi1)[0] == tf.shape(psi1)[1]:
+    if psi1.shape[0] == psi1.shape[1]:
         return tf.linalg.trace(tf.matmul(tf.transpose(psi1, conjugate=True), psi2))
     else:
         return tf_ketket_fid(psi1, psi2)
@@ -1093,9 +1093,10 @@ def swap_and_readout_ode(
     iq_infid = tf.cast(iq_infid, dtype=tf.complex128)
     infid += iq_infid
 
+    print(states_e[swap_position])
+
     overlap_e = calculateStateOverlap(states_e[swap_position], swap_target_e)
     overlap_g = calculateStateOverlap(states_g[swap_position], swap_target_g)
-
     swap_infid = 1 - (overlap_e + overlap_g)/2
     swap_infid = tf.cast(swap_infid, dtype=tf.complex128)
     infid += swap_infid
