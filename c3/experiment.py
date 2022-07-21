@@ -719,8 +719,8 @@ class Experiment:
         solver="rk4"
     ):
         """
-        Solve the Lindblad master equation by integrating the differential
-        equation of the density matrix
+        Solve the Lindblad master equation by simulating the stochastic
+        schrodinger equation.
 
         Returns
         -------
@@ -962,3 +962,53 @@ class Experiment:
         return tf.cast(plists, dtype=tf.complex128)
 
 
+    def schrodinger_evolution_rk4(
+        self, 
+        init_state, 
+        sequence,
+    ):
+
+        """
+        Solves the schrodinger equation equation RK4 method.
+
+        Returns
+        -------
+        List
+            A List of states for the time evolution.
+        """
+        
+        model = self.pmap.model
+        if model.lindbladian:
+            raise Exception(
+                "model.lindbladian is True."
+                + "This method is for coherent evoulution of state."
+            )
+
+        self.set_prop_method("schrodinger_rk4")
+
+        generator = self.pmap.generator
+        instructions = self.pmap.instructions
+        model.controllability = self.use_control_fields
+        model.controllability = self.use_control_fields
+        
+        psi_init = init_state
+        ts_init = tf.constant(0.0, dtype=tf.complex128)
+
+        psi_list = tf.expand_dims(psi_init, 0)
+        ts_list = [ts_init]
+
+        for gate in sequence:
+            try:
+                instr = instructions[gate]
+            except KeyError:
+                raise Exception(
+                    f"C3:Error: Gate '{gate}' is not defined."
+                    f" Available gates are:\n {list(instructions.keys())}."
+                )
+            result = self.propagation(model, generator, instr, psi_init)
+            psi_list = tf.concat([psi_list, result["states"]], 0)
+            ts_list = tf.concat([ts_list, tf.add(result["ts"], ts_init)], 0)
+            psi_init = result["states"][-1]
+            ts_init = result["ts"][-1]
+
+        return {"states": psi_list, "ts": ts_list}

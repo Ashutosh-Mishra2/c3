@@ -896,7 +896,7 @@ def propagate_stochastic_lind(model, hs, collapse_ops, psi_init, ts, dt, L_dag_L
     
     return psi_list.stack()
 
-def stochastic_step(psi, h, dt):
+def schrodinger_step(psi, h, dt):
     return - 1j*tf.matmul(h, psi)*dt
 
 
@@ -916,10 +916,10 @@ def rk4_lind_traj(h, psi, dt, col_ops, coherent_ev_flag, col_flags, solver="rk4"
     
     if coherent_ev_flag == 1:
         if solver == "rk38":
-            psi_new = rk38_step_lind(stochastic_step, psi, h, dt, col=None)
+            psi_new = rk38_step_lind(schrodinger_step, psi, h, dt, col=None)
             psi_new = psi_new / tf.linalg.norm(psi_new)
         else:
-            psi_new = rk4_step_lind(stochastic_step, psi, h, dt, col=None)
+            psi_new = rk4_step_lind(schrodinger_step, psi, h, dt, col=None)
             psi_new = psi_new / tf.linalg.norm(psi_new)
         
         return psi_new
@@ -936,6 +936,36 @@ def rk4_lind_traj(h, psi, dt, col_ops, coherent_ev_flag, col_flags, solver="rk4"
 
         return psi_new
 
+
+@state_deco
+@tf.function
+def schrodinger_rk4(
+    model: Model,
+    gen: Generator,
+    instr: Instruction,
+    init_state=None,
+) -> Dict:
+
+    interpolate_res = 2
+    Hs_dict = Hs_of_t(model, gen, instr, interpolate_res=interpolate_res)
+    Hs = Hs_dict["Hs"]
+    ts = Hs_dict["ts"]
+    dt = Hs_dict["dt"]
+
+    psi_list = tf.TensorArray(
+                    tf.complex128, 
+                    size=ts.shape[0], 
+                    dynamic_size=False, 
+                    infer_shape=False
+    )
+    psi_t = init_state
+    for index in tf.range(ts.shape[0]):
+        h = tf.slice(Hs, [2*index, 0, 0], [3, Hs.shape[1], Hs.shape[2]])
+        psi_t = rk4_step_lind(schrodinger_step, psi_t, h, dt, col=None)
+        psi_list = psi_list.write(index, psi_t)
+    psi_list = psi_list.stack()
+
+    return {"states": psi_list, "ts": ts}
 
 
 #@state_deco
