@@ -868,24 +868,21 @@ def propagate_stochastic_lind(model, hs, collapse_ops, psi_init, ts, dt, L_dag_L
     )
 
     for index in tf.range(ts.shape[0]):
-        relax_op_list = []
-        dec_op_list = []
-        temp_op_list = []
         coherent_ev_flag = 1
         counter = 0
+        col_flags = []
+        col_ops = []
         for key in model.subsystems:
             time1 = plist[counter][0][index]
             time2 = plist[counter][1][index]
             time_temp = plist[counter][2][index]
+            col_flags.append([time1, time2, time_temp])
 
-            relax_op = time1 * collapse_ops[counter][0]
-            dec_op = time2 * collapse_ops[counter][1]
-            temp_op = time_temp * collapse_ops[counter][2]
+            relax_op = collapse_ops[counter][0]
+            dec_op = collapse_ops[counter][1]
+            temp_op = collapse_ops[counter][2]
+            col_ops.append([relax_op, dec_op, temp_op])
 
-            relax_op_list.append(relax_op)
-            dec_op_list.append(dec_op)
-            temp_op_list.append(temp_op)
-            
             coherent_ev_flag = coherent_ev_flag * (1 - time1) * (1 - time2) * (1 - time_temp)
 
             counter += 1
@@ -894,7 +891,7 @@ def propagate_stochastic_lind(model, hs, collapse_ops, psi_init, ts, dt, L_dag_L
             h = tf.slice(hs, [3*index, 0, 0], [4, hs.shape[1], hs.shape[2]])
         else:
             h = tf.slice(hs, [2*index, 0, 0], [3, hs.shape[1], hs.shape[2]])
-        psi = rk4_lind_traj(h, psi, dt, relax_op_list, dec_op_list, temp_op_list, coherent_ev_flag, L_dag_L, solver=solver)
+        psi = rk4_lind_traj(h, psi, dt, col_ops, coherent_ev_flag, col_flags, solver=solver)
         psi_list = psi_list.write(index, psi)
     
     return psi_list.stack()
@@ -903,7 +900,7 @@ def stochastic_step(psi, h, dt):
     return - 1j*tf.matmul(h, psi)*dt
 
 
-def rk4_lind_traj(h, psi, dt, relax_ops, dec_ops, temp_ops, coherent_ev_flag, L_dag_L, solver="rk4"):
+def rk4_lind_traj(h, psi, dt, col_ops, coherent_ev_flag, col_flags, solver="rk4"):
     """
     Calculates the single time step lindbladian evoultion
     of a state vector.
@@ -916,46 +913,164 @@ def rk4_lind_traj(h, psi, dt, relax_ops, dec_ops, temp_ops, coherent_ev_flag, L_
     relax_op: relaxion operator
     dec_op: decoherence operator
     """
-    # TODO - check for normalization of the states
-    # TODO - What happens if two of them become one at the same time
+    
+    if coherent_ev_flag == 1:
+        if solver == "rk38":
+            psi_new = rk38_step_lind(stochastic_step, psi, h, dt, col=None)
+            psi_new = psi_new / tf.linalg.norm(psi_new)
+        else:
+            psi_new = rk4_step_lind(stochastic_step, psi, h, dt, col=None)
+            psi_new = psi_new / tf.linalg.norm(psi_new)
+        
+        return psi_new
 
-    pjk = []
-    for values in L_dag_L:
-        del_pk_T1 = tf.matmul(
-                tf.transpose(psi, conjugate=True),
-                tf.matmul(
-                    values[0], psi
-                )
-        )[0][0]
-        del_pk_T2 = tf.matmul(
-                tf.transpose(psi, conjugate=True),
-                tf.matmul(
-                    values[1], psi
-                )
-        )[0][0]
-        del_pk_Temp = tf.matmul(
-                tf.transpose(psi, conjugate=True),
-                tf.matmul(
-                    values[2], psi
-                )
-        )[0][0]
-
-        pjk.append([del_pk_T1, del_pk_T2, del_pk_Temp])
-
-    pj = tf.reduce_sum(pjk) * dt
-
-    if solver == "rk38":
-        psi_new = coherent_ev_flag * rk38_step_lind(stochastic_step, psi, h, dt) * (1/tf.sqrt(1 - pj))
     else:
-        psi_new = coherent_ev_flag * rk4_step_lind(stochastic_step, psi, h, dt) * (1/tf.sqrt(1 - pj))
+        psi_new = psi
+        for i in range(len(col_flags)):
+            counter = 0
+            for j in range(3):
+                if col_flags[i][j] == 1:
+                    psi_new = tf.linalg.matmul(col_ops[i][j], psi)
+                    psi_new = psi_new/tf.linalg.norm(psi_new)
+                counter += 1
 
-    # TODO - check if the condition below is correct. I have used this just for the time being.
-    if tf.reduce_prod(pjk) != 0:
-        for i in range(len(relax_ops)):
-            psi_new = (
-                        psi_new 
-                        + tf.linalg.matmul(relax_ops[i],psi) * tf.sqrt(1/pjk[i][0])
-                        + tf.linalg.matmul(dec_ops[i],psi) *   tf.sqrt(1/pjk[i][1])
-                        + tf.linalg.matmul(temp_ops[i],psi) *  tf.sqrt(1/pjk[i][2])
-                    )
-    return psi_new
+        return psi_new
+
+
+
+#@state_deco
+#def stochastic_schrodinger_rk4(
+#    model: Model,
+#    generator: Generator, 
+#    instruction: Instruction,
+#    collapse_ops: tf.Tensor, 
+#    psi_init: tf.Tensor,
+#    L_dag_L: tf.Tensor,
+#    plist: tf.Tensor,
+#    solver="rk4",
+#) -> Dict:
+#
+#    if solver == "rk4":
+#        interpolate_res = 2
+#    elif solver == "rk38":
+#        interpolate_res = 3
+#
+#    hs_of_t_ts = Hs_of_t(model, generator, instruction, L_dag_L=L_dag_L, interpolate_res=interpolate_res) 
+#    hs = hs_of_t_ts["Hs"]
+#    ts = hs_of_t_ts["ts"]
+#    dt = hs_of_t_ts["dt"]
+#
+#    psi_list = propagate_stochastic_lind(
+#                        model, 
+#                        hs, 
+#                        collapse_ops, 
+#                        psi_init, 
+#                        ts, 
+#                        dt, 
+#                        L_dag_L, 
+#                        plist, 
+#                        solver=solver
+#    )
+#    return {"states":psi_list, "ts": ts}
+#
+#
+#def propagate_stochastic_lind(model, hs, collapse_ops, psi_init, ts, dt, L_dag_L, plist, solver="rk4"):
+#    psi = psi_init
+#    psi_list = tf.TensorArray(
+#                    tf.complex128,
+#                    size=ts.shape[0],
+#                    dynamic_size=False, 
+#                    infer_shape=False
+#    )
+#
+#    for index in tf.range(ts.shape[0]):
+#        relax_op_list = []
+#        dec_op_list = []
+#        temp_op_list = []
+#        coherent_ev_flag = 1
+#        counter = 0
+#        for key in model.subsystems:
+#            time1 = plist[counter][0][index]
+#            time2 = plist[counter][1][index]
+#            time_temp = plist[counter][2][index]
+#
+#            relax_op = time1 * collapse_ops[counter][0]
+#            dec_op = time2 * collapse_ops[counter][1]
+#            temp_op = time_temp * collapse_ops[counter][2]
+#
+#            relax_op_list.append(relax_op)
+#            dec_op_list.append(dec_op)
+#            temp_op_list.append(temp_op)
+#            
+#            coherent_ev_flag = coherent_ev_flag * (1 - time1) * (1 - time2) * (1 - time_temp)
+#
+#            counter += 1
+#        
+#        if solver == "rk38":
+#            h = tf.slice(hs, [3*index, 0, 0], [4, hs.shape[1], hs.shape[2]])
+#        else:
+#            h = tf.slice(hs, [2*index, 0, 0], [3, hs.shape[1], hs.shape[2]])
+#        psi = rk4_lind_traj(h, psi, dt, relax_op_list, dec_op_list, temp_op_list, coherent_ev_flag, L_dag_L, solver=solver)
+#        psi_list = psi_list.write(index, psi)
+#    
+#    return psi_list.stack()
+#
+#def stochastic_step(psi, h, dt):
+#    return - 1j*tf.matmul(h, psi)*dt
+#
+#
+#def rk4_lind_traj(h, psi, dt, relax_ops, dec_ops, temp_ops, coherent_ev_flag, L_dag_L, solver="rk4"):
+#    """
+#    Calculates the single time step lindbladian evoultion
+#    of a state vector.
+#    Parameters:
+#    h: Hamiltonian at given time step
+#    psi: state vector
+#    time1, time2: 1 iff the the relaxation, decoherence operators
+#        are to be applied
+#    relax_op: relaxion operator
+#    dec_op: decoherence operator
+#    """
+#    # TODO - check for normalization of the states
+#    # TODO - What happens if two of them become one at the same time
+#
+#    pjk = []
+#    for values in L_dag_L:
+#        del_pk_T1 = tf.matmul(
+#                tf.transpose(psi, conjugate=True),
+#                tf.matmul(
+#                    values[0], psi
+#                )
+#        )[0][0]
+#        del_pk_T2 = tf.matmul(
+#                tf.transpose(psi, conjugate=True),
+#                tf.matmul(
+#                    values[1], psi
+#                )
+#        )[0][0]
+#        del_pk_Temp = tf.matmul(
+#                tf.transpose(psi, conjugate=True),
+#                tf.matmul(
+#                    values[2], psi
+#                )
+#        )[0][0]
+#
+#        pjk.append([del_pk_T1, del_pk_T2, del_pk_Temp])
+#
+#    pj = tf.reduce_sum(pjk) * dt
+#
+#    if solver == "rk38":
+#        psi_new = coherent_ev_flag * rk38_step_lind(stochastic_step, psi, h, dt) * (1/tf.sqrt(1 - pj))
+#    else:
+#        psi_new = coherent_ev_flag * rk4_step_lind(stochastic_step, psi, h, dt) * (1/tf.sqrt(1 - pj))
+#
+#    # TODO - check if the condition below is correct. I have used this just for the time being.
+#    if tf.reduce_prod(pjk) != 0:
+#        for i in range(len(relax_ops)):
+#            psi_new = (
+#                        psi_new 
+#                        + tf.linalg.matmul(relax_ops[i],psi) * tf.sqrt(1/pjk[i][0])
+#                        + tf.linalg.matmul(dec_ops[i],psi) *   tf.sqrt(1/pjk[i][1])
+#                        + tf.linalg.matmul(temp_ops[i],psi) *  tf.sqrt(1/pjk[i][2])
+#                    )
+#    return psi_new
