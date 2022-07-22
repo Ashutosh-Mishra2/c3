@@ -962,6 +962,7 @@ class Experiment:
         return tf.cast(plists, dtype=tf.complex128)
 
 
+    @tf.function
     def schrodinger_evolution_rk4(
         self, 
         init_state, 
@@ -969,7 +970,7 @@ class Experiment:
     ):
 
         """
-        Solves the schrodinger equation equation RK4 method.
+        Solves the schrodinger equation by RK4 method.
 
         Returns
         -------
@@ -1012,3 +1013,57 @@ class Experiment:
             ts_init = result["ts"][-1]
 
         return {"states": psi_list, "ts": ts_list}
+
+
+    @tf.function
+    def von_Neumann_rk4(
+        self, 
+        init_state, 
+        sequence,
+    ):
+
+        """
+        Solves the von Neumann equation by RK4 method.
+
+        Returns
+        -------
+        List
+            A List of states for the time evolution.
+        """
+        
+        model = self.pmap.model
+        if model.lindbladian:
+            raise Exception(
+                "model.lindbladian is True."
+                + "This method is for coherent evoulution of state."
+            )
+
+        self.set_prop_method("vonNeumann_rk4")
+
+        generator = self.pmap.generator
+        instructions = self.pmap.instructions
+        model.controllability = self.use_control_fields
+        model.controllability = self.use_control_fields
+        
+        rho_init = init_state
+        rho_init = tf_state_to_dm(rho_init)
+        ts_init = tf.constant(0.0, dtype=tf.complex128)
+
+        rho_list = tf.expand_dims(rho_init, 0)
+        ts_list = [ts_init]
+
+        for gate in sequence:
+            try:
+                instr = instructions[gate]
+            except KeyError:
+                raise Exception(
+                    f"C3:Error: Gate '{gate}' is not defined."
+                    f" Available gates are:\n {list(instructions.keys())}."
+                )
+            result = self.propagation(model, generator, instr, rho_init)
+            rho_list = tf.concat([rho_list, result["states"]], 0)
+            ts_list = tf.concat([ts_list, tf.add(result["ts"], ts_init)], 0)
+            rho_init = result["states"][-1]
+            ts_init = result["ts"][-1]
+
+        return {"states": rho_list, "ts": ts_list}

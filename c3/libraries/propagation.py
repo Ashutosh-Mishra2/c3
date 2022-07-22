@@ -897,7 +897,7 @@ def propagate_stochastic_lind(model, hs, collapse_ops, psi_init, ts, dt, L_dag_L
     return psi_list.stack()
 
 def schrodinger_step(psi, h, dt):
-    return - 1j*tf.matmul(h, psi)*dt
+    return -1j*tf.matmul(h, psi)*dt
 
 
 def rk4_lind_traj(h, psi, dt, col_ops, coherent_ev_flag, col_flags, solver="rk4"):
@@ -938,7 +938,6 @@ def rk4_lind_traj(h, psi, dt, col_ops, coherent_ev_flag, col_flags, solver="rk4"
 
 
 @state_deco
-@tf.function
 def schrodinger_rk4(
     model: Model,
     gen: Generator,
@@ -967,6 +966,39 @@ def schrodinger_rk4(
 
     return {"states": psi_list, "ts": ts}
 
+
+@state_deco
+def vonNeumann_rk4(
+    model: Model,
+    gen: Generator,
+    instr: Instruction,
+    init_state=None,
+) -> Dict:
+
+    interpolate_res = 2
+    Hs_dict = Hs_of_t(model, gen, instr, interpolate_res=interpolate_res)
+    Hs = Hs_dict["Hs"]
+    ts = Hs_dict["ts"]
+    dt = Hs_dict["dt"]
+
+    rho_list = tf.TensorArray(
+                    tf.complex128, 
+                    size=ts.shape[0], 
+                    dynamic_size=False, 
+                    infer_shape=False
+    )
+    rho_t = init_state
+    for index in tf.range(ts.shape[0]):
+        h = tf.slice(Hs, [2*index, 0, 0], [3, Hs.shape[1], Hs.shape[2]])
+        rho_t = rk4_step_lind(vonNeumann_step, rho_t, h, dt, col=None)
+        rho_list = rho_list.write(index, rho_t)
+    rho_list = rho_list.stack()
+
+    return {"states": rho_list, "ts": ts}
+
+
+def vonNeumann_step(rho, h, dt):
+    return -1j * commutator(h, rho)*dt
 
 #@state_deco
 #def stochastic_schrodinger_rk4(
