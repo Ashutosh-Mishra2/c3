@@ -760,8 +760,8 @@ def propagate_lind(Hs, col, rho, ts, dt, solver="rk4"):
             h = tf.slice(Hs, [3*index, 0, 0], [4, Hs.shape[1], Hs.shape[2]])
             rho_t = rk38_step_lind(lindblad_step, rho_t, h, dt, col=col)
         elif solver == "rk5":
-            h = tf.slice(Hs, [6*index, 0, 0], [7, Hs.shape[1], Hs.shape[2]])
-            rho_t = rk5_step_lind(lindblad_step, rho_t, h, dt, col=col)
+            h = tf.slice(Hs, [6*index, 0, 0], [6, Hs.shape[1], Hs.shape[2]])
+            rho_t = rk5_dopri_step_lind(lindblad_step, rho_t, h, dt, col=col)
         else:
             h = tf.slice(Hs, [2*index, 0, 0], [3, Hs.shape[1], Hs.shape[2]])
             rho_t = rk4_step_lind(lindblad_step, rho_t, h, dt, col=col)
@@ -797,7 +797,7 @@ def rk38_step_lind(func, rho, h, dt, col=None):
     rho_new = rho + (k1 + 3 * k2 + 3 * k3 + k4) / 8.0
     return rho_new
 
-def rk5_step_lind(func, rho, h, dt, col=None):
+def rk5_dopri_step_lind(func, rho, h, dt, col=None):
     if col == None:
         k1 = func(rho, h[0], dt)
         k2 = func(rho + 1./5 *k1, h[1], dt)
@@ -805,6 +805,7 @@ def rk5_step_lind(func, rho, h, dt, col=None):
         k4 = func(rho + 44./45*k1 - 56./15*k2 + 32./9*k3, h[3], dt)
         k5 = func(rho + 19372./6561*k1 - 25360./2187*k2 + 64448./6561*k3 - 212./729*k4, h[4], dt)
         k6 = func(rho + 9017./3168*k1 - 355./33*k2 + 46732./5247*k3 + 49./176*k4 - 5103./18656*k5, h[5], dt)
+        k7 = func(rho + 35./384*k1 + 500./1113*k3 + 125./192*k4 - 2187./6784*k5 + 11./84*k6, h[5], dt)
     else:
         k1 = func(rho, h[0], col, dt)
         k2 = func(rho + 1./5 *k1, h[1], col, dt)
@@ -812,7 +813,9 @@ def rk5_step_lind(func, rho, h, dt, col=None):
         k4 = func(rho + 44./45*k1 - 56./15*k2 + 32./9*k3, h[3], col, dt)
         k5 = func(rho + 19372./6561*k1 - 25360./2187*k2 + 64448./6561*k3 - 212./729*k4, h[4], col, dt)
         k6 = func(rho + 9017./3168*k1 - 355./33*k2 + 46732./5247*k3 + 49./176*k4 - 5103./18656*k5, h[5], col, dt)
-    rho_new = rho + 35./384*k1 + 500./1113*k3 + 125./192*k4 - 2187./6784*k5 + 11./84*k6
+        k7 = func(rho + 35./384*k1 + 500./1113*k3 + 125./192*k4 - 2187./6784*k5 + 11./84*k6, h[5], col, dt)
+        
+    rho_new = rho + 5179./57600*k1 + 7571./16695*k3 + 393./640*k4 - 92097./339200*k5 + 187./2100*k6 + 1./40*k7
     return rho_new
 
 def lindblad_step(rho, h, col_ops, dt):
@@ -835,8 +838,10 @@ def anticommutator(A, B):
 def interpolateSignal(ts, sig, interpolate_res):
     dt = ts[1] - ts[0]
     if interpolate_res == -5:
-        ts_interp = [[i + 0, i + 1/5, i + 3/10, i + 4/5, i+ 8/9, i + 1] for i in ts]
-        ts_interp = tf.reshape(ts_interp, [-1])
+        ts = tf.cast(ts, dtype=tf.float64)
+        dt = ts[1] - ts[0]
+        ts_interp = tf.concat([ts, ts+1./5*dt, ts+3./10*dt, ts+4./5*dt, ts+8./9*dt, ts+dt], axis=0)
+        ts_interp = tf.sort(ts_interp)
     else:
         ts_interp = tf.linspace(ts[0], ts[-1] + dt, tf.shape(ts)[0] * interpolate_res + 1)
     return tfp.math.interp_regular_1d_grid(
@@ -918,7 +923,7 @@ def propagate_stochastic_lind(model, hs, collapse_ops, psi_init, ts, dt, L_dag_L
         if solver == "rk38":
             h = tf.slice(hs, [3*index, 0, 0], [4, hs.shape[1], hs.shape[2]])
         elif solver == "rk5":
-            h = tf.slice(hs, [6*index, 0, 0], [7, hs.shape[1], hs.shape[2]])
+            h = tf.slice(hs, [6*index, 0, 0], [6, hs.shape[1], hs.shape[2]])
         else:
             h = tf.slice(hs, [2*index, 0, 0], [3, hs.shape[1], hs.shape[2]])
         psi = stochastic_lind_traj(h, psi, dt, col_ops, coherent_ev_flag, col_flags, solver=solver)
@@ -949,7 +954,7 @@ def stochastic_lind_traj(h, psi, dt, col_ops, coherent_ev_flag, col_flags, solve
             psi_new = rk38_step_lind(schrodinger_step, psi, h, dt, col=None)
             psi_new = psi_new / tf.linalg.norm(psi_new)
         elif solver == "rk5":
-            psi_new = rk5_step_lind(schrodinger_step, psi, h, dt, col=None)
+            psi_new = rk5_dopri_step_lind(schrodinger_step, psi, h, dt, col=None)
             psi_new = psi_new / tf.linalg.norm(psi_new)
         else:
             psi_new = rk4_step_lind(schrodinger_step, psi, h, dt, col=None)
