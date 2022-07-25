@@ -669,6 +669,8 @@ def lindblad_rk4(
         interpolate_res = 2
     elif solver == "rk38":
         interpolate_res = 3
+    elif solver == "rk5":
+        interpolate_res = -5 # Fixing this a random number for now
 
     Hs_dict = Hs_of_t(model, gen, instr, interpolate_res=interpolate_res)
     Hs = Hs_dict["Hs"]
@@ -757,6 +759,9 @@ def propagate_lind(Hs, col, rho, ts, dt, solver="rk4"):
         if solver =="rk38":
             h = tf.slice(Hs, [3*index, 0, 0], [4, Hs.shape[1], Hs.shape[2]])
             rho_t = rk38_step_lind(lindblad_step, rho_t, h, dt, col=col)
+        elif solver == "rk5":
+            h = tf.slice(Hs, [6*index, 0, 0], [7, Hs.shape[1], Hs.shape[2]])
+            rho_t = rk5_step_lind(lindblad_step, rho_t, h, dt, col=col)
         else:
             h = tf.slice(Hs, [2*index, 0, 0], [3, Hs.shape[1], Hs.shape[2]])
             rho_t = rk4_step_lind(lindblad_step, rho_t, h, dt, col=col)
@@ -775,8 +780,8 @@ def rk4_step_lind(func, rho, h, dt, col=None):
         k2 = func(rho + k1 / 2.0, h[1], col, dt)
         k3 = func(rho + k2 / 2.0, h[1], col, dt)
         k4 = func(rho + k3, h[2], col, dt)
-    rho = rho + (k1 + 2 * k2 + 2 * k3 + k4) / 6.0
-    return rho
+    rho_new = rho + (k1 + 2 * k2 + 2 * k3 + k4) / 6.0
+    return rho_new
 
 def rk38_step_lind(func, rho, h, dt, col=None):
     if col == None:
@@ -789,9 +794,26 @@ def rk38_step_lind(func, rho, h, dt, col=None):
         k2 = func(rho + k1 / 3.0, h[1], col, dt)
         k3 = func(rho + (-k1 / 3.0) + k2, h[2], col, dt)
         k4 = func(rho + k1 -k2 + k3, h[3], col, dt)
-    rho = rho + (k1 + 3 * k2 + 3 * k3 + k4) / 8.0
-    return rho
+    rho_new = rho + (k1 + 3 * k2 + 3 * k3 + k4) / 8.0
+    return rho_new
 
+def rk5_step_lind(func, rho, h, dt, col=None):
+    if col == None:
+        k1 = func(rho, h[0], dt)
+        k2 = func(rho + 1./5 *k1, h[1], dt)
+        k3 = func(rho + 3./40*k1 + 9./40*k2, h[2], dt)
+        k4 = func(rho + 44./45*k1 - 56./15*k2 + 32./9*k3, h[3], dt)
+        k5 = func(rho + 19372./6561*k1 - 25360./2187*k2 + 64448./6561*k3 - 212./729*k4, h[4], dt)
+        k6 = func(rho + 9017./3168*k1 - 355./33*k2 + 46732./5247*k3 + 49./176*k4 - 5103./18656*k5, h[5], dt)
+    else:
+        k1 = func(rho, h[0], col, dt)
+        k2 = func(rho + 1./5 *k1, h[1], col, dt)
+        k3 = func(rho + 3./40*k1 + 9./40*k2, h[2], col, dt)
+        k4 = func(rho + 44./45*k1 - 56./15*k2 + 32./9*k3, h[3], col, dt)
+        k5 = func(rho + 19372./6561*k1 - 25360./2187*k2 + 64448./6561*k3 - 212./729*k4, h[4], col, dt)
+        k6 = func(rho + 9017./3168*k1 - 355./33*k2 + 46732./5247*k3 + 49./176*k4 - 5103./18656*k5, h[5], col, dt)
+    rho_new = rho + 35./384*k1 + 500./1113*k3 + 125./192*k4 - 2187./6784*k5 + 11./84*k6
+    return rho_new
 
 def lindblad_step(rho, h, col_ops, dt):
     del_rho = -1j * commutator(h, rho)
@@ -812,7 +834,11 @@ def anticommutator(A, B):
 
 def interpolateSignal(ts, sig, interpolate_res):
     dt = ts[1] - ts[0]
-    ts_interp = tf.linspace(ts[0], ts[-1] + dt, tf.shape(ts)[0] * interpolate_res + 1)
+    if interpolate_res == -5:
+        ts_interp = [[i + 0, i + 1/5, i + 3/10, i + 4/5, i+ 8/9, i + 1] for i in ts]
+        ts_interp = tf.reshape(ts_interp, [-1])
+    else:
+        ts_interp = tf.linspace(ts[0], ts[-1] + dt, tf.shape(ts)[0] * interpolate_res + 1)
     return tfp.math.interp_regular_1d_grid(
         ts_interp,
         ts[0],
@@ -838,6 +864,8 @@ def stochastic_schrodinger_rk4(
         interpolate_res = 2
     elif solver == "rk38":
         interpolate_res = 3
+    elif solver == "rk5":
+        interpolate_res = -5 # Fixing this a random number for now
 
     hs_of_t_ts = Hs_of_t(model, generator, instruction, L_dag_L=L_dag_L, interpolate_res=interpolate_res) 
     hs = hs_of_t_ts["Hs"]
@@ -889,9 +917,11 @@ def propagate_stochastic_lind(model, hs, collapse_ops, psi_init, ts, dt, L_dag_L
         
         if solver == "rk38":
             h = tf.slice(hs, [3*index, 0, 0], [4, hs.shape[1], hs.shape[2]])
+        elif solver == "rk5":
+            h = tf.slice(hs, [6*index, 0, 0], [7, hs.shape[1], hs.shape[2]])
         else:
             h = tf.slice(hs, [2*index, 0, 0], [3, hs.shape[1], hs.shape[2]])
-        psi = rk4_lind_traj(h, psi, dt, col_ops, coherent_ev_flag, col_flags, solver=solver)
+        psi = stochastic_lind_traj(h, psi, dt, col_ops, coherent_ev_flag, col_flags, solver=solver)
         psi_list = psi_list.write(index, psi)
     
     return psi_list.stack()
@@ -900,7 +930,7 @@ def schrodinger_step(psi, h, dt):
     return -1j*tf.matmul(h, psi)*dt
 
 
-def rk4_lind_traj(h, psi, dt, col_ops, coherent_ev_flag, col_flags, solver="rk4"):
+def stochastic_lind_traj(h, psi, dt, col_ops, coherent_ev_flag, col_flags, solver="rk4"):
     """
     Calculates the single time step lindbladian evoultion
     of a state vector.
@@ -918,6 +948,9 @@ def rk4_lind_traj(h, psi, dt, col_ops, coherent_ev_flag, col_flags, solver="rk4"
         if solver == "rk38":
             psi_new = rk38_step_lind(schrodinger_step, psi, h, dt, col=None)
             psi_new = psi_new / tf.linalg.norm(psi_new)
+        elif solver == "rk5":
+            psi_new = rk5_step_lind(schrodinger_step, psi, h, dt, col=None)
+            psi_new = psi_new / tf.linalg.norm(psi_new)
         else:
             psi_new = rk4_step_lind(schrodinger_step, psi, h, dt, col=None)
             psi_new = psi_new / tf.linalg.norm(psi_new)
@@ -925,6 +958,7 @@ def rk4_lind_traj(h, psi, dt, col_ops, coherent_ev_flag, col_flags, solver="rk4"
         return psi_new
 
     else:
+        print("Collapse")
         psi_new = psi
         for i in range(len(col_flags)):
             counter = 0
@@ -961,6 +995,7 @@ def schrodinger_rk4(
     for index in tf.range(ts.shape[0]):
         h = tf.slice(Hs, [2*index, 0, 0], [3, Hs.shape[1], Hs.shape[2]])
         psi_t = rk4_step_lind(schrodinger_step, psi_t, h, dt, col=None)
+        #psi_t = psi_t/tf.norm(psi_t)
         psi_list = psi_list.write(index, psi_t)
     psi_list = psi_list.stack()
 
