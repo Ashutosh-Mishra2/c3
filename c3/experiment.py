@@ -967,6 +967,7 @@ class Experiment:
         self, 
         init_state, 
         sequence,
+        solver="rk4"
     ):
 
         """
@@ -1006,7 +1007,7 @@ class Experiment:
                     f"C3:Error: Gate '{gate}' is not defined."
                     f" Available gates are:\n {list(instructions.keys())}."
                 )
-            result = self.propagation(model, generator, instr, psi_init)
+            result = self.propagation(model, generator, instr, psi_init, solver=solver)
             psi_list = tf.concat([psi_list, result["states"]], 0)
             ts_list = tf.concat([ts_list, tf.add(result["ts"], ts_init)], 0)
             psi_init = result["states"][-1]
@@ -1020,6 +1021,7 @@ class Experiment:
         self, 
         init_state, 
         sequence,
+        solver="rk4"
     ):
 
         """
@@ -1060,7 +1062,7 @@ class Experiment:
                     f"C3:Error: Gate '{gate}' is not defined."
                     f" Available gates are:\n {list(instructions.keys())}."
                 )
-            result = self.propagation(model, generator, instr, rho_init)
+            result = self.propagation(model, generator, instr, rho_init, solver=solver)
             rho_list = tf.concat([rho_list, result["states"]], 0)
             ts_list = tf.concat([ts_list, tf.add(result["ts"], ts_init)], 0)
             rho_init = result["states"][-1]

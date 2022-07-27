@@ -1024,9 +1024,18 @@ def schrodinger_rk4(
     gen: Generator,
     instr: Instruction,
     init_state=None,
+    solver="rk4"
 ) -> Dict:
 
-    interpolate_res = 2
+    if solver == "rk4":
+        interpolate_res = 2
+    elif solver == "rk38":
+        interpolate_res = 3
+    elif solver == "rk5":
+        interpolate_res = -5 # Fixing this a random number for now
+    elif solver == "Tsit5":
+        interpolate_res = -6 # Fixing this a random number for now
+
     Hs_dict = Hs_of_t(model, gen, instr, interpolate_res=interpolate_res)
     Hs = Hs_dict["Hs"]
     ts = Hs_dict["ts"]
@@ -1039,9 +1048,22 @@ def schrodinger_rk4(
                     infer_shape=False
     )
     psi_t = init_state
-    for index in tf.range(ts.shape[0]):
-        h = tf.slice(Hs, [2*index, 0, 0], [3, Hs.shape[1], Hs.shape[2]])
-        psi_t = rk4_step_lind(schrodinger_step, psi_t, h, dt, col=None)
+    for index in tf.range(ts.shape[0]):        
+        if solver =="rk38":
+            h = tf.slice(Hs, [3*index, 0, 0], [4, Hs.shape[1], Hs.shape[2]])
+            psi_t = rk38_step_lind(schrodinger_step, psi_t, h, dt, col=None)
+        elif solver == "rk5":
+            h = tf.slice(Hs, [6*index, 0, 0], [6, Hs.shape[1], Hs.shape[2]])
+            psi_t = rk5_dopri_step_lind(schrodinger_step, psi_t, h, dt, col=None)
+        elif solver == "Tsit5":
+            h = tf.slice(Hs, [6*index, 0, 0], [6, Hs.shape[1], Hs.shape[2]])
+            psi_t = Tsit5_step_lind(schrodinger_step, psi_t, h, dt, col=None)
+        else:
+            h = tf.slice(Hs, [2*index, 0, 0], [3, Hs.shape[1], Hs.shape[2]])
+            psi_t = rk4_step_lind(schrodinger_step, psi_t, h, dt, col=None)
+
+        #h = tf.slice(Hs, [2*index, 0, 0], [3, Hs.shape[1], Hs.shape[2]])
+        #psi_t = rk4_step_lind(schrodinger_step, psi_t, h, dt, col=None)
         #psi_t = psi_t/tf.norm(psi_t)
         psi_list = psi_list.write(index, psi_t)
     psi_list = psi_list.stack()
@@ -1055,9 +1077,18 @@ def vonNeumann_rk4(
     gen: Generator,
     instr: Instruction,
     init_state=None,
+    solver="rk4"
 ) -> Dict:
 
-    interpolate_res = 2
+    if solver == "rk4":
+        interpolate_res = 2
+    elif solver == "rk38":
+        interpolate_res = 3
+    elif solver == "rk5":
+        interpolate_res = -5 # Fixing this a random number for now
+    elif solver == "Tsit5":
+        interpolate_res = -6 # Fixing this a random number for now
+
     Hs_dict = Hs_of_t(model, gen, instr, interpolate_res=interpolate_res)
     Hs = Hs_dict["Hs"]
     ts = Hs_dict["ts"]
@@ -1071,8 +1102,21 @@ def vonNeumann_rk4(
     )
     rho_t = init_state
     for index in tf.range(ts.shape[0]):
-        h = tf.slice(Hs, [2*index, 0, 0], [3, Hs.shape[1], Hs.shape[2]])
-        rho_t = rk4_step_lind(vonNeumann_step, rho_t, h, dt, col=None)
+        if solver =="rk38":
+            h = tf.slice(Hs, [3*index, 0, 0], [4, Hs.shape[1], Hs.shape[2]])
+            rho_t = rk38_step_lind(vonNeumann_step, rho_t, h, dt, col=None)
+        elif solver == "rk5":
+            h = tf.slice(Hs, [6*index, 0, 0], [6, Hs.shape[1], Hs.shape[2]])
+            rho_t = rk5_dopri_step_lind(vonNeumann_step, rho_t, h, dt, col=None)
+        elif solver == "Tsit5":
+            h = tf.slice(Hs, [6*index, 0, 0], [6, Hs.shape[1], Hs.shape[2]])
+            rho_t = Tsit5_step_lind(vonNeumann_step, rho_t, h, dt, col=None)
+        else:
+            h = tf.slice(Hs, [2*index, 0, 0], [3, Hs.shape[1], Hs.shape[2]])
+            rho_t = rk4_step_lind(vonNeumann_step, rho_t, h, dt, col=None)
+
+        #h = tf.slice(Hs, [2*index, 0, 0], [3, Hs.shape[1], Hs.shape[2]])
+        #rho_t = rk4_step_lind(vonNeumann_step, rho_t, h, dt, col=None)
         rho_list = rho_list.write(index, rho_t)
     rho_list = rho_list.stack()
 
