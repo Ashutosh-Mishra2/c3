@@ -952,13 +952,13 @@ def stochastic_lind_traj(h, psi, dt, col_ops, coherent_ev_flag, col_flags, solve
     if coherent_ev_flag == 1:
         if solver == "rk38":
             psi_new = rk38_step_lind(schrodinger_step, psi, h, dt, col=None)
-            psi_new = psi_new / tf.linalg.norm(psi_new)
+            #psi_new = psi_new / tf.linalg.norm(psi_new)
         elif solver == "rk5":
             psi_new = rk5_dopri_step_lind(schrodinger_step, psi, h, dt, col=None)
-            psi_new = psi_new / tf.linalg.norm(psi_new)
+            #psi_new = psi_new / tf.linalg.norm(psi_new)
         else:
             psi_new = rk4_step_lind(schrodinger_step, psi, h, dt, col=None)
-            psi_new = psi_new / tf.linalg.norm(psi_new)
+            #psi_new = psi_new / tf.linalg.norm(psi_new)
         
         return psi_new
 
