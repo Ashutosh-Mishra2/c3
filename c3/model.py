@@ -61,8 +61,11 @@ class Model:
         self.controllability = True
 
     def set_init_state(self, state):
-        if self.lindbladian:
-            self.init_state = tf_utils.tf_state_to_dm(state)
+        if self.lindbladian and state.shape[0] != state.shape[1]:
+            if state.shape[0] == self.tot_dim:
+                self.init_state = tf_utils.tf_state_to_dm(state)
+            elif self.lindbladian and state.shape[0] == self.tot_dim**2:
+                self.init_state = tf_utils.tf_vec_to_dm(state)
         else:
             self.init_state = state
 
@@ -75,10 +78,14 @@ class Model:
         """Get an initial state. If a task to compute a thermal state is set, return that."""
         if self.init_state is None:
             if "init_ground" in self.tasks:
+                print("Initial state not specified. Using thermal state as the initial state.")
+                print("You can use model.set_init_state() method to set the initial state.")
                 psi_init = self.tasks["init_ground"].initialise(
                     self.drift_ham, self.lindbladian
                 )
             else:
+                print("Initial state not specified. Using ground state as the initial state.")
+                print("You can use model.set_init_state() method to set the initial state.")
                 psi_init = self.get_ground_state()
         else:
             psi_init = self.init_state

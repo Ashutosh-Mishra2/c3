@@ -513,12 +513,12 @@ def tf_convolve_legacy(sig: tf.Tensor, resp: tf.Tensor):
 
 def interpolateSignal(ts, sig, interpolate_res):
     dt = ts[1] - ts[0]
-    if interpolate_res == -5:
+    if interpolate_res == -1: # DOPRI5
         ts = tf.cast(ts, dtype=tf.float64)
         dt = ts[1] - ts[0]
         ts_interp = tf.concat([ts, ts+1./5*dt, ts+3./10*dt, ts+4./5*dt, ts+8./9*dt, ts+dt], axis=0)
         ts_interp = tf.sort(ts_interp)
-    elif interpolate_res == -6:
+    elif interpolate_res == -2: #Tsit5
         ts = tf.cast(ts, dtype=tf.float64)
         dt = ts[1] - ts[0]
         ts_interp = tf.concat([ts, ts+0.161*dt, ts+0.327*dt, ts+0.9*dt, ts+0.9800255409045097*dt, ts+dt], axis=0)
@@ -532,3 +532,11 @@ def interpolateSignal(ts, sig, interpolate_res):
         sig,
         fill_value="extrapolate"
     )
+
+def commutator(A, B):
+    return tf.matmul(A, B) - tf.matmul(B, A)
+
+
+def anticommutator(A, B):
+    return tf.matmul(A, B) + tf.matmul(B, A)
+
