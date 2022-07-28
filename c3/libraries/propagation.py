@@ -1024,7 +1024,8 @@ def schrodinger_rk4(
     gen: Generator,
     instr: Instruction,
     init_state=None,
-    solver="rk4"
+    solver="rk4",
+    renormalize_step=None
 ) -> Dict:
 
     if solver == "rk4":
@@ -1062,9 +1063,10 @@ def schrodinger_rk4(
             h = tf.slice(Hs, [2*index, 0, 0], [3, Hs.shape[1], Hs.shape[2]])
             psi_t = rk4_step_lind(schrodinger_step, psi_t, h, dt, col=None)
 
-        #h = tf.slice(Hs, [2*index, 0, 0], [3, Hs.shape[1], Hs.shape[2]])
-        #psi_t = rk4_step_lind(schrodinger_step, psi_t, h, dt, col=None)
-        #psi_t = psi_t/tf.norm(psi_t)
+        if renormalize_step != None:
+            if index%renormalize_step == 0:
+                psi_t = psi_t/tf.linalg.norm(psi_t)
+        
         psi_list = psi_list.write(index, psi_t)
     psi_list = psi_list.stack()
 
@@ -1115,8 +1117,6 @@ def vonNeumann_rk4(
             h = tf.slice(Hs, [2*index, 0, 0], [3, Hs.shape[1], Hs.shape[2]])
             rho_t = rk4_step_lind(vonNeumann_step, rho_t, h, dt, col=None)
 
-        #h = tf.slice(Hs, [2*index, 0, 0], [3, Hs.shape[1], Hs.shape[2]])
-        #rho_t = rk4_step_lind(vonNeumann_step, rho_t, h, dt, col=None)
         rho_list = rho_list.write(index, rho_t)
     rho_list = rho_list.stack()
 
