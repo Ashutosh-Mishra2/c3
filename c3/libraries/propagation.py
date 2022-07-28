@@ -827,7 +827,7 @@ def lindblad(rho, h, dt, col):
     return del_rho * dt
 
 @step_deco
-def schrodinger(psi, h, dt, col=None):
+def schroedinger(psi, h, dt, col=None):
     return -1j*tf.matmul(h, psi)*dt
 
 @step_deco

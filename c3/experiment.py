@@ -662,8 +662,8 @@ class Experiment:
         trace = np.trace(np.matmul(rho, oper))
         return [[np.real(trace)]]  # ,[np.imag(trace)]]
 
-
-    def compute_states(self, solver="rk4", step_function="schrodinger"):
+    @tf.function
+    def compute_states(self, solver="rk4", step_function="schroedinger"):
         """
         Solve the Lindblad master equation by integrating the differential
         equation of the density matrix
@@ -713,7 +713,7 @@ class Experiment:
 
         return {"states": state_list, "ts": ts_list}
 
-    def compute_final_state(self, solver="rk4", step_function="schrodinger"):
+    def compute_final_state(self, solver="rk4", step_function="schroedinger"):
         """
         Solve the Lindblad master equation by integrating the differential
         equation of the density matrix

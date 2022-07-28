@@ -6,6 +6,7 @@ from tensorflow.python.client import device_lib
 import os
 from c3.utils.qt_utils import pauli_basis, projector
 from typing import Callable, List
+import tensorflow_probability as tfp
 
 
 def tf_setup():

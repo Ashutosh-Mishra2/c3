@@ -87,6 +87,8 @@ class Model:
                 print("Initial state not specified. Using ground state as the initial state.")
                 print("You can use model.set_init_state() method to set the initial state.")
                 psi_init = self.get_ground_state()
+                if self.lindbladian:
+                    psi_init = tf_utils.tf_state_to_dm(psi_init)
         else:
             psi_init = self.init_state
         return psi_init
@@ -395,11 +397,6 @@ class Model:
 
         return signal_hamiltonian
 
-    def get_dissipative_Hamiltonian(self, L_dag_L, signal=None):
-        Hs = self.get_Hamiltonian(signal)
-        Hs = Hs -1j * 0.5 * tf.reduce_sum(tf.reduce_sum(L_dag_L, axis=0), axis=0)
-        return Hs
-
     def get_sparse_Hamiltonian(self, signal=None):
         return self.blowup_excitations(self.get_Hamiltonian(signal))
 
@@ -618,7 +615,7 @@ class Model:
             deph_ch = deph_ch * ((1 - p) * Id + p * Z)
         return deph_ch
 
-    def Hs_of_t(self, signal, interpolate_res=2, L_dag_L=None):
+    def Hs_of_t(self, signal, interpolate_res=2):
         """
         Generate a list of Hamiltonians for each time step of interpolated signal for Runge-Kutta Methods.
         
@@ -631,11 +628,15 @@ class Model:
         Returns:
             dict: List of Hamiltonians (or effective Hamiltonians for stochastic case) for each time step.
         """
+        h0, hctrls = self.get_Hamiltonians()
+
         ts_list = []
         signals = []
+        hks = []
         for key in signal:
-            signals.append(signal[key]["values"])
             ts_list.append(signal[key]["ts"])
+            signals.append(signal[key]["values"])
+            hks.append(hctrls[key])
 
         ts = tf.math.reduce_mean(ts_list, axis=0)
         # Only do the safety check outside of graph mode for performance reasons.
@@ -648,8 +649,9 @@ class Model:
             tf.math.reduce_variance(ts[1:] - ts[:-1]) < 1e-5 * (ts[1] - ts[0])  # type: ignore
         ):
             raise Exception("C3Error:Something with the times happend.")
-        ts = tf.cast(ts, dtype=tf.complex128)
         dt = ts[1] - ts[0]
+        dt = tf.cast(dt, dtype=tf.complex128)
+        
 
         signals_interp = []
         for sig in signals:
@@ -657,12 +659,18 @@ class Model:
             signals_interp.append(sig_new)
 
         cflds = tf.cast(signals_interp, tf.complex128)
-        if L_dag_L is not None:
-            Hs = self.get_dissipative_Hamiltonian(cflds, L_dag_L)
-        else:
-            Hs = self.get_Hamiltonian(cflds)
+        hks = tf.cast(hks, tf.complex128)
 
-        if L_dag_L is not None:
-            return {"Hs": Hs, "ts": ts, "dt": dt, "LdagL": L_dag_L} 
-        else:
-            return {"Hs": Hs, "ts": ts, "dt": dt}
+        Hs = self.calculate_sum_Hs(h0, hks, cflds)
+        ts = tf.cast(ts, dtype=tf.complex128)
+
+        return {"Hs": Hs, "ts": ts, "dt": dt}
+
+    def calculate_sum_Hs(self, h0, hks, cflds):
+        control_field = tf.reshape(
+            tf.transpose(cflds), 
+            (tf.shape(cflds)[1], tf.shape(cflds)[0], 1, 1)
+        )
+        hk = tf.multiply(control_field, hks)
+        Hs = tf.reduce_sum(hk, axis=1)
+        return Hs + h0
