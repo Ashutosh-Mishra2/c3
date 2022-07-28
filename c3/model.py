@@ -53,11 +53,18 @@ class Model:
         self.dressed_drift_ham = None
         self.__hamiltonians = None
         self.__dressed_hamiltonians = None
+        self.init_state = None
         if subsystems:
             self.set_components(subsystems, couplings, max_excitations)
         if tasks:
             self.set_tasks(tasks)
         self.controllability = True
+
+    def set_init_state(self, state):
+        if self.lindbladian:
+            self.init_state = tf_utils.tf_state_to_dm(state)
+        else:
+            self.init_state = state
 
     def get_ground_state(self) -> tf.constant:
         gs = [[0] * self.tot_dim]
@@ -66,12 +73,15 @@ class Model:
 
     def get_init_state(self) -> tf.Tensor:
         """Get an initial state. If a task to compute a thermal state is set, return that."""
-        if "init_ground" in self.tasks:
-            psi_init = self.tasks["init_ground"].initialise(
-                self.drift_ham, self.lindbladian
-            )
+        if self.init_state is None:
+            if "init_ground" in self.tasks:
+                psi_init = self.tasks["init_ground"].initialise(
+                    self.drift_ham, self.lindbladian
+                )
+            else:
+                psi_init = self.get_ground_state()
         else:
-            psi_init = self.get_ground_state()
+            psi_init = self.init_state
         return psi_init
 
     def __check_drive_connect(self, comp):
@@ -378,6 +388,11 @@ class Model:
 
         return signal_hamiltonian
 
+    def get_dissipative_Hamiltonian(self, L_dag_L, signal=None):
+        Hs = self.get_Hamiltonian(signal)
+        Hs = Hs -1j * 0.5 * tf.reduce_sum(tf.reduce_sum(L_dag_L, axis=0), axis=0)
+        return Hs
+
     def get_sparse_Hamiltonian(self, signal=None):
         return self.blowup_excitations(self.get_Hamiltonian(signal))
 
@@ -595,3 +610,52 @@ class Model:
             # TODO: check that this is right (or do you put the Zs together?)
             deph_ch = deph_ch * ((1 - p) * Id + p * Z)
         return deph_ch
+
+    def Hs_of_t(self, signal, interpolate_res=2, L_dag_L=None):
+        """
+        Generate a list of Hamiltonians for each time step of interpolated signal for Runge-Kutta Methods.
+        
+        Args:
+            signal (_type_): Input signal
+            interpolate_res (int, optional): Interpolation resolution according to RK method. Defaults to 2.
+            L_dag_L (tf.tensor, optional): List of {L^\dagger L} where L represents the collapse operators.
+                                           Defaults to None. This is only used for stochastic case.
+
+        Returns:
+            dict: List of Hamiltonians (or effective Hamiltonians for stochastic case) for each time step.
+        """
+        ts_list = []
+        signals = []
+        for key in signal:
+            signals.append(signal[key]["values"])
+            ts_list.append(signal[key]["ts"])
+
+        ts = tf.math.reduce_mean(ts_list, axis=0)
+        # Only do the safety check outside of graph mode for performance reasons.
+        # When using graph mode, the safety check will still be executed ONCE during tracing
+        if tf.executing_eagerly() and not tf.reduce_all(
+            tf.math.reduce_variance(ts_list, axis=0) < (1e-5 * (ts[1] - ts[0]))
+        ):
+            raise Exception("C3Error:Something with the times happend.")
+        if tf.executing_eagerly() and not tf.reduce_all(
+            tf.math.reduce_variance(ts[1:] - ts[:-1]) < 1e-5 * (ts[1] - ts[0])  # type: ignore
+        ):
+            raise Exception("C3Error:Something with the times happend.")
+        ts = tf.cast(ts, dtype=tf.complex128)
+        dt = ts[1] - ts[0]
+
+        signals_interp = []
+        for sig in signals:
+            sig_new = tf_utils.interpolateSignal(ts, sig, interpolate_res)
+            signals_interp.append(sig_new)
+
+        cflds = tf.cast(signals_interp, tf.complex128)
+        if L_dag_L is not None:
+            Hs = self.get_dissipative_Hamiltonian(cflds, L_dag_L)
+        else:
+            Hs = self.get_Hamiltonian(cflds)
+
+        if L_dag_L is not None:
+            return {"Hs": Hs, "ts": ts, "dt": dt, "LdagL": L_dag_L} 
+        else:
+            return {"Hs": Hs, "ts": ts, "dt": dt}

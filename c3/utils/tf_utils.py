@@ -510,3 +510,25 @@ def tf_convolve_legacy(sig: tf.Tensor, resp: tf.Tensor):
     fft_conv = tf.math.reduce_prod(fft_sig_resp, axis=0)
     convolution = tf.signal.ifft(fft_conv)
     return convolution[resp_len - 1 : sig_len + resp_len - 1]
+
+def interpolateSignal(ts, sig, interpolate_res):
+    dt = ts[1] - ts[0]
+    if interpolate_res == -5:
+        ts = tf.cast(ts, dtype=tf.float64)
+        dt = ts[1] - ts[0]
+        ts_interp = tf.concat([ts, ts+1./5*dt, ts+3./10*dt, ts+4./5*dt, ts+8./9*dt, ts+dt], axis=0)
+        ts_interp = tf.sort(ts_interp)
+    elif interpolate_res == -6:
+        ts = tf.cast(ts, dtype=tf.float64)
+        dt = ts[1] - ts[0]
+        ts_interp = tf.concat([ts, ts+0.161*dt, ts+0.327*dt, ts+0.9*dt, ts+0.9800255409045097*dt, ts+dt], axis=0)
+        ts_interp = tf.sort(ts_interp)
+    else:
+        ts_interp = tf.linspace(ts[0], ts[-1] + dt, tf.shape(ts)[0] * interpolate_res + 1)
+    return tfp.math.interp_regular_1d_grid(
+        ts_interp,
+        ts[0],
+        ts[-1],
+        sig,
+        fill_value="extrapolate"
+    )

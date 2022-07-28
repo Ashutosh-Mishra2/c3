@@ -661,6 +661,7 @@ class Experiment:
             rho = tf_state_to_dm(state)
         trace = np.trace(np.matmul(rho, oper))
         return [[np.real(trace)]]  # ,[np.imag(trace)]]
+
     
     def solve_lindblad_ode(self, init_state, sequence, solver="rk4"):
         """
@@ -707,6 +708,115 @@ class Experiment:
             ts_init = result["ts"][-1]
 
         # TODO - Add Frame rotation and dephasing strength
+        return {"states": rho_list, "ts": ts_list}
+
+    @tf.function
+    def schrodinger_evolution_rk4(
+        self, 
+        init_state, 
+        sequence,
+        solver="rk4",
+        renormalize_step=None
+    ):
+
+        """
+        Solves the schrodinger equation by RK4 method.
+
+        Returns
+        -------
+        List
+            A List of states for the time evolution.
+        """
+        
+        model = self.pmap.model
+        if model.lindbladian:
+            raise Exception(
+                "model.lindbladian is True."
+                + "This method is for coherent evoulution of state."
+            )
+
+        self.set_prop_method("schrodinger_rk4")
+
+        generator = self.pmap.generator
+        instructions = self.pmap.instructions
+        model.controllability = self.use_control_fields
+        model.controllability = self.use_control_fields
+        
+        psi_init = init_state
+        ts_init = tf.constant(0.0, dtype=tf.complex128)
+
+        psi_list = tf.expand_dims(psi_init, 0)
+        ts_list = [ts_init]
+
+        for gate in sequence:
+            try:
+                instr = instructions[gate]
+            except KeyError:
+                raise Exception(
+                    f"C3:Error: Gate '{gate}' is not defined."
+                    f" Available gates are:\n {list(instructions.keys())}."
+                )
+            result = self.propagation(model, generator, instr, psi_init, solver=solver, renormalize_step=renormalize_step)
+            psi_list = tf.concat([psi_list, result["states"]], 0)
+            ts_list = tf.concat([ts_list, tf.add(result["ts"], ts_init)], 0)
+            psi_init = result["states"][-1]
+            ts_init = result["ts"][-1]
+
+        return {"states": psi_list, "ts": ts_list}
+
+
+    @tf.function
+    def von_Neumann_rk4(
+        self, 
+        init_state, 
+        sequence,
+        solver="rk4"
+    ):
+
+        """
+        Solves the von Neumann equation by RK4 method.
+
+        Returns
+        -------
+        List
+            A List of states for the time evolution.
+        """
+        
+        model = self.pmap.model
+        if model.lindbladian:
+            raise Exception(
+                "model.lindbladian is True."
+                + "This method is for coherent evoulution of state."
+            )
+
+        self.set_prop_method("vonNeumann_rk4")
+
+        generator = self.pmap.generator
+        instructions = self.pmap.instructions
+        model.controllability = self.use_control_fields
+        model.controllability = self.use_control_fields
+        
+        rho_init = init_state
+        rho_init = tf_state_to_dm(rho_init)
+        ts_init = tf.constant(0.0, dtype=tf.complex128)
+
+        rho_list = tf.expand_dims(rho_init, 0)
+        ts_list = [ts_init]
+
+        for gate in sequence:
+            try:
+                instr = instructions[gate]
+            except KeyError:
+                raise Exception(
+                    f"C3:Error: Gate '{gate}' is not defined."
+                    f" Available gates are:\n {list(instructions.keys())}."
+                )
+            result = self.propagation(model, generator, instr, rho_init, solver=solver)
+            rho_list = tf.concat([rho_list, result["states"]], 0)
+            ts_list = tf.concat([ts_list, tf.add(result["ts"], ts_init)], 0)
+            rho_init = result["states"][-1]
+            ts_init = result["ts"][-1]
+
         return {"states": rho_list, "ts": ts_list}
 
     def solve_stochastic_ode(
@@ -856,12 +966,6 @@ class Experiment:
 
 
     @tf.function
-    def test_function(self, Num_batches):
-        for i in range(Num_batches):
-            print("Testing")
-        return 0, 0
-
-    @tf.function
     def single_stochastic_run(self, plist_seq):
         print("Tracing Single stochastic run")
         sequence = self.sequence
@@ -960,113 +1064,3 @@ class Experiment:
 
             counter += 1
         return tf.cast(plists, dtype=tf.complex128)
-
-
-    @tf.function
-    def schrodinger_evolution_rk4(
-        self, 
-        init_state, 
-        sequence,
-        solver="rk4",
-        renormalize_step=None
-    ):
-
-        """
-        Solves the schrodinger equation by RK4 method.
-
-        Returns
-        -------
-        List
-            A List of states for the time evolution.
-        """
-        
-        model = self.pmap.model
-        if model.lindbladian:
-            raise Exception(
-                "model.lindbladian is True."
-                + "This method is for coherent evoulution of state."
-            )
-
-        self.set_prop_method("schrodinger_rk4")
-
-        generator = self.pmap.generator
-        instructions = self.pmap.instructions
-        model.controllability = self.use_control_fields
-        model.controllability = self.use_control_fields
-        
-        psi_init = init_state
-        ts_init = tf.constant(0.0, dtype=tf.complex128)
-
-        psi_list = tf.expand_dims(psi_init, 0)
-        ts_list = [ts_init]
-
-        for gate in sequence:
-            try:
-                instr = instructions[gate]
-            except KeyError:
-                raise Exception(
-                    f"C3:Error: Gate '{gate}' is not defined."
-                    f" Available gates are:\n {list(instructions.keys())}."
-                )
-            result = self.propagation(model, generator, instr, psi_init, solver=solver, renormalize_step=renormalize_step)
-            psi_list = tf.concat([psi_list, result["states"]], 0)
-            ts_list = tf.concat([ts_list, tf.add(result["ts"], ts_init)], 0)
-            psi_init = result["states"][-1]
-            ts_init = result["ts"][-1]
-
-        return {"states": psi_list, "ts": ts_list}
-
-
-    @tf.function
-    def von_Neumann_rk4(
-        self, 
-        init_state, 
-        sequence,
-        solver="rk4"
-    ):
-
-        """
-        Solves the von Neumann equation by RK4 method.
-
-        Returns
-        -------
-        List
-            A List of states for the time evolution.
-        """
-        
-        model = self.pmap.model
-        if model.lindbladian:
-            raise Exception(
-                "model.lindbladian is True."
-                + "This method is for coherent evoulution of state."
-            )
-
-        self.set_prop_method("vonNeumann_rk4")
-
-        generator = self.pmap.generator
-        instructions = self.pmap.instructions
-        model.controllability = self.use_control_fields
-        model.controllability = self.use_control_fields
-        
-        rho_init = init_state
-        rho_init = tf_state_to_dm(rho_init)
-        ts_init = tf.constant(0.0, dtype=tf.complex128)
-
-        rho_list = tf.expand_dims(rho_init, 0)
-        ts_list = [ts_init]
-
-        for gate in sequence:
-            try:
-                instr = instructions[gate]
-            except KeyError:
-                raise Exception(
-                    f"C3:Error: Gate '{gate}' is not defined."
-                    f" Available gates are:\n {list(instructions.keys())}."
-                )
-            result = self.propagation(model, generator, instr, rho_init, solver=solver)
-            rho_list = tf.concat([rho_list, result["states"]], 0)
-            ts_list = tf.concat([ts_list, tf.add(result["ts"], ts_init)], 0)
-            rho_init = result["states"][-1]
-            ts_init = result["ts"][-1]
-
-        return {"states": rho_list, "ts": ts_list}
