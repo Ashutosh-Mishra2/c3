@@ -1,4 +1,5 @@
 "A library for propagators and closely related functions"
+from cmath import nan
 from posixpath import split
 import numpy as np
 import tensorflow as tf
@@ -908,6 +909,8 @@ def stochastic_schrodinger_rk4(
         interpolate_res = -5 # Fixing this a random number for now
     elif solver == "Tsit5":
         interpolate_res = -6 # Fixing this a random number for now
+    elif solver == "exp":
+        interpolate_res = 1
 
     hs_of_t_ts = Hs_of_t(model, generator, instruction, L_dag_L=L_dag_L, interpolate_res=interpolate_res) 
     hs = hs_of_t_ts["Hs"]
@@ -963,8 +966,10 @@ def propagate_stochastic_lind(model, hs, collapse_ops, psi_init, ts, dt, L_dag_L
             h = tf.slice(hs, [6*index, 0, 0], [6, hs.shape[1], hs.shape[2]])
         elif solver == "Tsit5":
             h = tf.slice(hs, [6*index, 0, 0], [6, hs.shape[1], hs.shape[2]])
-        else:
+        elif solver == "rk4":
             h = tf.slice(hs, [2*index, 0, 0], [3, hs.shape[1], hs.shape[2]])
+        else:
+            h = tf.slice(hs, [index, 0, 0], [1, hs.shape[1], hs.shape[2]])
         psi = stochastic_lind_traj(h, psi, dt, col_ops, coherent_ev_flag, col_flags, solver=solver)
         psi_list = psi_list.write(index, psi)
     
@@ -998,10 +1003,11 @@ def stochastic_lind_traj(h, psi, dt, col_ops, coherent_ev_flag, col_flags, solve
         elif solver == "Tsit5":
             psi_new = Tsit5_step_lind(schrodinger_step, psi, h, dt, col=None)
             #psi_new = psi_new / tf.linalg.norm(psi_new)
-        else:
+        elif solver == "rk4":
             psi_new = rk4_step_lind(schrodinger_step, psi, h, dt, col=None)
             #psi_new = psi_new / tf.linalg.norm(psi_new)
-        
+        else:
+            psi_new = tf.matmul(tf.linalg.expm(-1.0j*h*dt), psi)
         return psi_new
 
     else:
@@ -1012,9 +1018,9 @@ def stochastic_lind_traj(h, psi, dt, col_ops, coherent_ev_flag, col_flags, solve
             for j in range(3):
                 if col_flags[i][j] == 1:
                     psi_new = tf.linalg.matmul(col_ops[i][j], psi)
-                    psi_new = psi_new/tf.linalg.norm(psi_new)
                 counter += 1
 
+        psi_new = tf.math.l2_normalize(psi_new)
         return psi_new
 
 

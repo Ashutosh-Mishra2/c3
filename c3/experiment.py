@@ -832,7 +832,8 @@ class Experiment:
             x = tf.convert_to_tensor(plist_list, dtype=tf.complex128)
             psi_shots, ts_list = tf.vectorized_map(self.single_stochastic_run, x)
 
-
+        if tf.reduce_any(tf.math.is_nan(tf.abs(psi_shots))):
+            print("Some states are NaN.")
         # TODO - Add Frame rotation and dephasing strength
         return {"states": psi_shots, "ts": ts_list}
     
@@ -962,7 +963,6 @@ class Experiment:
         return tf.cast(plists, dtype=tf.complex128)
 
 
-    @tf.function
     def schrodinger_evolution_rk4(
         self, 
         init_state, 
@@ -1017,7 +1017,6 @@ class Experiment:
         return {"states": psi_list, "ts": ts_list}
 
 
-    @tf.function
     def von_Neumann_rk4(
         self, 
         init_state, 
