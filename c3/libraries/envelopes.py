@@ -52,18 +52,14 @@ def pwc_shape(t, params):
     t_bin_end = tf.cast(params["t_bin_end"].get_value(), tf.float64)
     inphase = tf.cast(params["inphase"].get_value(), tf.float64)
 
-    t_interp = t
-    shape = tf.reshape(
-        tfp.math.interp_regular_1d_grid(
+    t_interp = tf.cast(t, dtype=tf.float64)
+    shape = tfp.math.interp_regular_1d_grid(
             t_interp,
             t_bin_start,
             t_bin_end,
             inphase,
-            fill_value_below=0,
-            fill_value_above=0,
-        ),
-        [len(t)],
     )
+    shape = tf.reshape(shape,[tf.shape(t)[0]])
 
     return tf_complexify(shape)
 
