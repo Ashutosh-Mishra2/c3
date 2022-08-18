@@ -6,6 +6,7 @@ from tensorflow.python.client import device_lib
 import os
 from c3.utils.qt_utils import pauli_basis, projector
 from typing import Callable, List
+import tensorflow_probability as tfp
 
 
 def tf_setup():
@@ -234,11 +235,13 @@ def tf_diff(l):  # noqa
 
 # MATRIX FUNCTIONS
 
-#TODO - change A.shape[: length-2] to tf.shape
+# TODO - change A.shape[: length-2] to tf.shape
 def Id_like(A):
     """Identity of the same size as A."""
     length = len(tf.shape(A))  # TF does not like negative pythonic indexing
-    return tf.eye(tf.shape(A)[length - 1], batch_shape=A.shape[: length - 2], dtype=A.dtype)
+    return tf.eye(
+        tf.shape(A)[length - 1], batch_shape=A.shape[: length - 2], dtype=A.dtype
+    )
 
 
 #
@@ -252,7 +255,9 @@ def Id_like(A):
 
 def tf_kron(A, B):
     """Kronecker product of 2 matrices. Can be applied with batch dimmensions."""
-    dims = tf.convert_to_tensor([tf.shape(A)[-2] * tf.shape(B)[-2], tf.shape(A)[-1] * tf.shape(B)[-1]])
+    dims = tf.convert_to_tensor(
+        [tf.shape(A)[-2] * tf.shape(B)[-2], tf.shape(A)[-1] * tf.shape(B)[-1]]
+    )
     res = tf.expand_dims(tf.expand_dims(A, -1), -3) * tf.expand_dims(
         tf.expand_dims(B, -2), -4
     )
@@ -406,7 +411,7 @@ def tf_choi_to_chi(U, dims=None):
     return tf.linalg.adjoint(B) @ U @ B
 
 
-#TODO - super_to_choi is not compatible with tf.function
+# TODO - super_to_choi is not compatible with tf.function
 def super_to_choi(A):
     """
     Convert a super operator to choi representation.
@@ -510,3 +515,52 @@ def tf_convolve_legacy(sig: tf.Tensor, resp: tf.Tensor):
     fft_conv = tf.math.reduce_prod(fft_sig_resp, axis=0)
     convolution = tf.signal.ifft(fft_conv)
     return convolution[resp_len - 1 : sig_len + resp_len - 1]
+
+
+def interpolate_signal(ts, sig, interpolate_res):
+    dt = ts[1] - ts[0]
+    if interpolate_res == -1:  # DOPRI5
+        ts = tf.cast(ts, dtype=tf.float64)
+        dt = ts[1] - ts[0]
+        ts_interp = tf.concat(
+            [
+                ts,
+                ts + 1.0 / 5 * dt,
+                ts + 3.0 / 10 * dt,
+                ts + 4.0 / 5 * dt,
+                ts + 8.0 / 9 * dt,
+                ts + dt,
+            ],
+            axis=0,
+        )
+        ts_interp = tf.sort(ts_interp)
+    elif interpolate_res == -2:  # tsit5
+        ts = tf.cast(ts, dtype=tf.float64)
+        dt = ts[1] - ts[0]
+        ts_interp = tf.concat(
+            [
+                ts,
+                ts + 0.161 * dt,
+                ts + 0.327 * dt,
+                ts + 0.9 * dt,
+                ts + 0.9800255409045097 * dt,
+                ts + dt,
+            ],
+            axis=0,
+        )
+        ts_interp = tf.sort(ts_interp)
+    else:
+        ts_interp = tf.linspace(
+            ts[0], ts[-1] + dt, tf.shape(ts)[0] * interpolate_res + 1
+        )
+    return tfp.math.interp_regular_1d_grid(
+        ts_interp, ts[0], ts[-1], sig, fill_value="extrapolate"
+    )
+
+
+def commutator(A, B):
+    return tf.matmul(A, B) - tf.matmul(B, A)
+
+
+def anticommutator(A, B):
+    return tf.matmul(A, B) + tf.matmul(B, A)

@@ -1,29 +1,39 @@
 "A library for propagators and closely related functions"
-from cmath import nan
-from posixpath import split
 import numpy as np
 import tensorflow as tf
-import tensorflow_probability as tfp
 from typing import Dict
 from c3.model import Model
 from c3.generator.generator import Generator
 from c3.signal.gates import Instruction
-from scipy import interpolate
 from c3.utils.tf_utils import (
     tf_kron,
     tf_matmul_left,
     tf_matmul_n,
     tf_spre,
     tf_spost,
+    commutator,
+    anticommutator,
 )
-from c3.libraries.constants import kb, hbar
 
 unitary_provider = dict()
 state_provider = dict()
+solver_dict = dict()
+step_dict = dict()
+
+# Dictionary specifying the slice length for a dt for every solver
+# the first element is the interpolation resolution
+# the second element is the number of arguments per time step
+# the third element is written in tf_utils.interpolate_signal according to corresponding Tableau
+solver_slicing = {
+    "rk4": [2, 3, 2],
+    "rk38": [3, 4, 3],
+    "rk5": [6, 6, -1],
+    "tsit5": [6, 6, -2],
+}
 
 
 def step_vonNeumann_psi(psi, h, dt):
-    return -1j * dt * tf.linalg.matmul(h, psi)
+    return -1j * dt * tf.linalg.matvec(h, psi)
 
 
 def unitary_deco(func):
@@ -39,6 +49,22 @@ def state_deco(func):
     Decorator for making registry of functions
     """
     state_provider[str(func.__name__)] = func
+    return func
+
+
+def solver_deco(func):
+    """
+    Decorator for making registry of solvers
+    """
+    solver_dict[str(func.__name__)] = func
+    return func
+
+
+def step_deco(func):
+    """
+    Decorator for making registry of solvers
+    """
+    step_dict[str(func.__name__)] = func
     return func
 
 
@@ -193,7 +219,9 @@ def sum_h0_hks(h0, hks, cf_t):
 
 
 @unitary_deco
-def rk4(model: Model, gen: Generator, instr: Instruction, init_state=None) -> Dict:
+def rk4_unitary(
+    model: Model, gen: Generator, instr: Instruction, init_state=None
+) -> Dict:
     prop_res = 2
     dim = model.tot_dim
     Hs = []
@@ -282,7 +310,7 @@ def pwc(
     dt = ts[1] - ts[0]
 
     if batch_size is None:
-        batch_size = tf.constant(len(h0), tf.int32)
+        batch_size = tf.constant(len(ts), tf.int32)
     else:
         batch_size = tf.constant(batch_size, tf.int32)
 
@@ -311,6 +339,7 @@ def pwc(
         dUs = tf.vectorized_map(model.blowup_excitations, dUs)
 
     return {"U": U, "dUs": dUs, "ts": ts}
+
 
 ####################
 # HELPER FUNCTIONS #
@@ -479,7 +508,6 @@ def tf_batch_propagate(
                 result = tf_propagation_vectorized(hamiltonian, hks, x, dt)
         else:
             if lindbladian:
-                # TODO - Check if it works
                 result = tf_propagation_lind(x, None, None, None, dt)
             else:
                 result = tf_propagation_vectorized(x, None, None, dt)
@@ -657,201 +685,210 @@ def tf_expm_dynamic(A, acc=1e-5):
 
 
 @state_deco
-def lindblad_rk4(
-    model: Model,
-    gen: Generator,
-    instr: Instruction,
-    collapse_ops: tf.Tensor,
-    init_state=None,
-    solver="rk4",
+def ode_solver(
+    model: Model, gen: Generator, instr: Instruction, init_state, solver, step_function
 ) -> Dict:
 
-    if solver == "rk4":
-        interpolate_res = 2
-    elif solver == "rk38":
-        interpolate_res = 3
-    elif solver == "rk5":
-        interpolate_res = -5 # Fixing this a random number for now
-    elif solver == "Tsit5":
-        interpolate_res = -6 # Fixing this a random number for now
+    signal = gen.generate_signals(instr)
 
-    Hs_dict = Hs_of_t(model, gen, instr, interpolate_res=interpolate_res)
+    if model.lindbladian:
+        col = model.get_Lindbladians()
+        step_function = "lindblad"
+    else:
+        col = None
+
+    interpolate_res = solver_slicing[solver][2]
+
+    Hs_dict = model.Hs_of_t(signal, interpolate_res=interpolate_res)
     Hs = Hs_dict["Hs"]
     ts = Hs_dict["ts"]
     dt = Hs_dict["dt"]
-    rhos = propagate_lind(Hs, collapse_ops, init_state, ts, dt, solver=solver)
 
-    return {"states": rhos, "ts": ts}
-
-
-def Hs_of_t(model, gen, instr, interpolate_res=2, L_dag_L=None):
-    if model.controllability:
-        Hs = get_Hs_of_t_cflds(model, gen, instr, interpolate_res, L_dag_L)
-    else:
-        Hs = get_Hs_of_t_no_cflds(model, gen, instr, interpolate_res)
-    return Hs
-
-
-def get_Hs_of_t_cflds(model, gen, instr, interpolate_res, L_dag_L=None):
-    ts = []
-    signal = gen.generate_signals(instr)
-    h0, hctrls = model.get_Hamiltonians()
-    signals = []
-    hks = []
-    for key in signal:
-        signals.append(signal[key]["values"])
-        ts = signal[key]["ts"]
-        hks.append(hctrls[key])
-    signals_interp = []
-    for sig in signals:
-        sig_new = interpolateSignal(ts, sig, interpolate_res)
-        signals_interp.append(sig_new)
-
-    cflds = tf.cast(signals_interp, tf.complex128)
-    hks = tf.cast(hks, tf.complex128)
-    if L_dag_L is not None:
-        Hs = calculate_sum_Hs(h0, hks, cflds, L_dag_L)
-    else:
-        Hs = calculate_sum_Hs(h0, hks, cflds)
-    ts = tf.cast(ts, dtype=tf.complex128)
-    dt = ts[1] - ts[0]
-
-    if L_dag_L is not None:
-        return {"Hs": Hs, "ts": ts, "dt": dt, "LdagL": L_dag_L} 
-    else:
-        return {"Hs": Hs, "ts": ts, "dt": dt}
-
-def calculate_sum_Hs(h0, hks, cflds, L_dag_L=None):
-    control_field = tf.reshape(
-        tf.transpose(cflds), 
-        (tf.shape(cflds)[1], tf.shape(cflds)[0], 1, 1)
+    state_list = tf.TensorArray(
+        tf.complex128, size=ts.shape[0], dynamic_size=False, infer_shape=False
     )
-    hk = tf.multiply(control_field, hks)
-    Hs = tf.reduce_sum(hk, axis=1)
-    if L_dag_L is not None:
-        return Hs + h0 -1j * 0.5 * tf.reduce_sum(tf.reduce_sum(L_dag_L, axis=0), axis=0)
-    return Hs + h0
-
-# TODO - change this function to include interpolation
-# TODO - Also make this compatible with tf.function by removing .numpy()
-def get_Hs_of_t_no_cflds(model, gen, instr, prop_res):
-    Hs = []
-    ts = []
-    gen.resolution = prop_res * gen.resolution
-    signal = gen.generate_signals(instr)
-    Hs = model.get_Hamiltonian(signal)
-    ts_list = [sig["ts"][1:] for sig in signal.values()]
-    ts = tf.constant(tf.math.reduce_mean(ts_list, axis=0))
-    if not np.all(tf.math.reduce_variance(ts_list, axis=0) < 1e-5 * (ts[1] - ts[0])):
-        raise Exception("C3Error:Something with the times happend.")
-    if not np.all(tf.math.reduce_variance(ts[1:] - ts[:-1]) < 1e-5 * (ts[1] - ts[0])):  # type: ignore
-        raise Exception("C3Error:Something with the times happend.")
-
-    dt = tf.constant(ts[1 * prop_res].numpy() - ts[0].numpy(), dtype=tf.complex128)
-    return {"Hs": Hs, "ts": ts[::prop_res], "dt": dt}
-
-def propagate_lind(Hs, col, rho, ts, dt, solver="rk4"):
-    rho_list = tf.TensorArray(
-                    tf.complex128, 
-                    size=ts.shape[0], 
-                    dynamic_size=False, 
-                    infer_shape=False
-    )
-    rho_t = rho
+    state_t = init_state
+    start = solver_slicing[solver][0]
+    stop = solver_slicing[solver][1]
+    ode_step = step_dict[step_function]
+    solver_function = solver_dict[solver]
     for index in tf.range(ts.shape[0]):
-        if solver =="rk38":
-            h = tf.slice(Hs, [3*index, 0, 0], [4, Hs.shape[1], Hs.shape[2]])
-            rho_t = rk38_step_lind(lindblad_step, rho_t, h, dt, col=col)
-        elif solver == "rk5":
-            h = tf.slice(Hs, [6*index, 0, 0], [6, Hs.shape[1], Hs.shape[2]])
-            rho_t = rk5_dopri_step_lind(lindblad_step, rho_t, h, dt, col=col)
-        elif solver == "Tsit5":
-            h = tf.slice(Hs, [6*index, 0, 0], [6, Hs.shape[1], Hs.shape[2]])
-            rho_t = Tsit5_step_lind(lindblad_step, rho_t, h, dt, col=col)
-        else:
-            h = tf.slice(Hs, [2*index, 0, 0], [3, Hs.shape[1], Hs.shape[2]])
-            rho_t = rk4_step_lind(lindblad_step, rho_t, h, dt, col=col)
-        rho_list = rho_list.write(index, rho_t)
-    return rho_list.stack()
+        h = tf.slice(Hs, [start * index, 0, 0], [stop, Hs.shape[1], Hs.shape[2]])
+        state_t = solver_function(ode_step, state_t, h, dt, col=col)
+        state_list = state_list.write(index, state_t)
 
-# TODO - make a RK45 algorithm with interpolation
-def rk4_step_lind(func, rho, h, dt, col=None):
-    if col == None:
-        k1 = func(rho, h[0], dt)
-        k2 = func(rho + k1 / 2.0, h[1], dt)
-        k3 = func(rho + k2 / 2.0, h[1], dt)
-        k4 = func(rho + k3, h[2], dt)
+    states = state_list.stack()
+
+    return {"states": states, "ts": ts}
+
+
+@state_deco
+def ode_solver_final_state(
+    model: Model, gen: Generator, instr: Instruction, init_state, solver, step_function
+) -> Dict:
+
+    signal = gen.generate_signals(instr)
+
+    if model.lindbladian:
+        col = model.get_Lindbladians()
+        step_function = "lindblad"
     else:
-        k1 = func(rho, h[0], col, dt)
-        k2 = func(rho + k1 / 2.0, h[1], col, dt)
-        k3 = func(rho + k2 / 2.0, h[1], col, dt)
-        k4 = func(rho + k3, h[2], col, dt)
+        col = None
+
+    interpolate_res = solver_slicing[solver][2]
+
+    Hs_dict = model.Hs_of_t(signal, interpolate_res=interpolate_res)
+    Hs = Hs_dict["Hs"]
+    ts = Hs_dict["ts"]
+    dt = Hs_dict["dt"]
+
+    state_t = init_state
+    start = solver_slicing[solver][0]
+    stop = solver_slicing[solver][1]
+    ode_step = step_dict[step_function]
+    solver_function = solver_dict[solver]
+    for index in tf.range(ts.shape[0]):
+        h = tf.slice(Hs, [start * index, 0, 0], [stop, Hs.shape[1], Hs.shape[2]])
+        state_t = solver_function(ode_step, state_t, h, dt, col=col)
+
+    return {"states": state_t, "ts": ts}
+
+
+@solver_deco
+def rk4(func, rho, h, dt, col=None):
+    k1 = func(rho, h[0], dt, col)
+    k2 = func(rho + k1 / 2.0, h[1], dt, col)
+    k3 = func(rho + k2 / 2.0, h[1], dt, col)
+    k4 = func(rho + k3, h[2], dt, col)
     rho_new = rho + (k1 + 2 * k2 + 2 * k3 + k4) / 6.0
     return rho_new
 
-def rk38_step_lind(func, rho, h, dt, col=None):
-    if col == None:
-        k1 = func(rho, h[0], dt)
-        k2 = func(rho + k1 / 3.0, h[1], dt)
-        k3 = func(rho + (-k1 / 3.0) + k2, h[2], dt)
-        k4 = func(rho + k1 - k2 + k3, h[3], dt)
-    else:
-        k1 = func(rho, h[0], col, dt)
-        k2 = func(rho + k1 / 3.0, h[1], col, dt)
-        k3 = func(rho + (-k1 / 3.0) + k2, h[2], col, dt)
-        k4 = func(rho + k1 -k2 + k3, h[3], col, dt)
+
+@solver_deco
+def rk38(func, rho, h, dt, col=None):
+    k1 = func(rho, h[0], dt, col)
+    k2 = func(rho + k1 / 3.0, h[1], dt, col)
+    k3 = func(rho + (-k1 / 3.0) + k2, h[2], dt, col)
+    k4 = func(rho + k1 - k2 + k3, h[3], dt, col)
     rho_new = rho + (k1 + 3 * k2 + 3 * k3 + k4) / 8.0
     return rho_new
 
-def rk5_dopri_step_lind(func, rho, h, dt, col=None):
-    if col == None:
-        k1 = func(rho, h[0], dt)
-        k2 = func(rho + 1./5 *k1, h[1], dt)
-        k3 = func(rho + 3./40*k1 + 9./40*k2, h[2], dt)
-        k4 = func(rho + 44./45*k1 - 56./15*k2 + 32./9*k3, h[3], dt)
-        k5 = func(rho + 19372./6561*k1 - 25360./2187*k2 + 64448./6561*k3 - 212./729*k4, h[4], dt)
-        k6 = func(rho + 9017./3168*k1 - 355./33*k2 + 46732./5247*k3 + 49./176*k4 - 5103./18656*k5, h[5], dt)
-        k7 = func(rho + 35./384*k1 + 500./1113*k3 + 125./192*k4 - 2187./6784*k5 + 11./84*k6, h[5], dt)
-    else:
-        k1 = func(rho, h[0], col, dt)
-        k2 = func(rho + 1./5 *k1, h[1], col, dt)
-        k3 = func(rho + 3./40*k1 + 9./40*k2, h[2], col, dt)
-        k4 = func(rho + 44./45*k1 - 56./15*k2 + 32./9*k3, h[3], col, dt)
-        k5 = func(rho + 19372./6561*k1 - 25360./2187*k2 + 64448./6561*k3 - 212./729*k4, h[4], col, dt)
-        k6 = func(rho + 9017./3168*k1 - 355./33*k2 + 46732./5247*k3 + 49./176*k4 - 5103./18656*k5, h[5], col, dt)
-        k7 = func(rho + 35./384*k1 + 500./1113*k3 + 125./192*k4 - 2187./6784*k5 + 11./84*k6, h[5], col, dt)
-        
-    rho_new = rho + 5179./57600*k1 + 7571./16695*k3 + 393./640*k4 - 92097./339200*k5 + 187./2100*k6 + 1./40*k7
+
+@solver_deco
+def rk5(func, rho, h, dt, col=None):
+    k1 = func(rho, h[0], dt, col)
+    k2 = func(rho + 1.0 / 5 * k1, h[1], dt, col)
+    k3 = func(rho + 3.0 / 40 * k1 + 9.0 / 40 * k2, h[2], dt, col)
+    k4 = func(rho + 44.0 / 45 * k1 - 56.0 / 15 * k2 + 32.0 / 9 * k3, h[3], dt, col)
+    k5 = func(
+        rho
+        + 19372.0 / 6561 * k1
+        - 25360.0 / 2187 * k2
+        + 64448.0 / 6561 * k3
+        - 212.0 / 729 * k4,
+        h[4],
+        dt,
+        col,
+    )
+    k6 = func(
+        rho
+        + 9017.0 / 3168 * k1
+        - 355.0 / 33 * k2
+        + 46732.0 / 5247 * k3
+        + 49.0 / 176 * k4
+        - 5103.0 / 18656 * k5,
+        h[5],
+        dt,
+        col,
+    )
+    k7 = func(
+        rho
+        + 35.0 / 384 * k1
+        + 500.0 / 1113 * k3
+        + 125.0 / 192 * k4
+        - 2187.0 / 6784 * k5
+        + 11.0 / 84 * k6,
+        h[5],
+        dt,
+        col,
+    )
+
+    rho_new = (
+        rho
+        + 5179.0 / 57600 * k1
+        + 7571.0 / 16695 * k3
+        + 393.0 / 640 * k4
+        - 92097.0 / 339200 * k5
+        + 187.0 / 2100 * k6
+        + 1.0 / 40 * k7
+    )
     return rho_new
 
-def Tsit5_step_lind(func, rho, h, dt, col=None):
-    if col == None:
-        k1 = func(rho, h[0], dt)
-        k2 = func(rho + 0.161 *k1, h[1], dt)
-        k3 = func(rho + -0.008480655492356989*k1 + 0.335480655492357*k2, h[2], dt)
-        k4 = func(rho + 2.8971530571054935*k1 -6.359448489975075*k2 + 4.3622954328695815*k3, h[3], dt)
-        k5 = func(rho + 5.325864828439257*k1 -11.748883564062828*k2 + 7.4955393428898365*k3 -0.09249506636175525*k4, h[4], dt)
-        k6 = func(rho + 5.86145544294642*k1 -12.92096931784711*k2 + 8.159367898576159*k3 + -0.071584973281401*k4 -0.028269050394068383*k5, h[5], dt)
-        k7 = func(rho + 0.09646076681806523*k1 + 0.01*k2 + 0.4798896504144996*k3 + 1.379008574103742*k4 -3.290069515436081*k5 + 2.324710524099774*k6, h[5], dt)
-    else:
-        k1 = func(rho, h[0], col, dt)
-        k2 = func(rho + 0.161 *k1, h[1], col, dt)
-        k3 = func(rho + -0.008480655492356989*k1 + 0.335480655492357*k2, h[2], col, dt)
-        k4 = func(rho + 2.8971530571054935*k1 -6.359448489975075*k2 + 4.3622954328695815*k3, h[3], col, dt)
-        k5 = func(rho + 5.325864828439257*k1 -11.748883564062828*k2 + 7.4955393428898365*k3 -0.09249506636175525*k4, h[4], col, dt)
-        k6 = func(rho + 5.86145544294642*k1 -12.92096931784711*k2 + 8.159367898576159*k3 + -0.071584973281401*k4 -0.028269050394068383*k5, h[5], col, dt)
-        k7 = func(rho + 0.09646076681806523*k1 + 0.01*k2 + 0.4798896504144996*k3 + 1.379008574103742*k4 -3.290069515436081*k5 + 2.324710524099774*k6, h[5], col, dt)
-        
-    #Parameters from paper
-    # rho_new = rho + 0.001780011052226*k1 + 0.000816434459657*k2 - 0.007880878010262*k3 + 0.144711007173263*k4 - 0.582357165452555*k5 + 0.458082105929187*k6 + 1./66*k7
-    
-    #parameters from Julia code
-    rho_new = rho + 0.09468075576583945*k1 + 0.009183565540343254*k2 + 0.4877705284247616*k3 + 1.234297566930479*k4 -2.7077123499835256*k5 + 1.866628418170587*k6 + 1./66*k7
+
+@solver_deco
+def tsit5(func, rho, h, dt, col=None):
+    k1 = func(rho, h[0], dt, col)
+    k2 = func(rho + 0.161 * k1, h[1], dt, col)
+    k3 = func(rho + -0.008480655492356989 * k1 + 0.335480655492357 * k2, h[2], dt, col)
+    k4 = func(
+        rho
+        + 2.8971530571054935 * k1
+        - 6.359448489975075 * k2
+        + 4.3622954328695815 * k3,
+        h[3],
+        dt,
+        col,
+    )
+    k5 = func(
+        rho
+        + 5.325864828439257 * k1
+        - 11.748883564062828 * k2
+        + 7.4955393428898365 * k3
+        - 0.09249506636175525 * k4,
+        h[4],
+        dt,
+        col,
+    )
+    k6 = func(
+        rho
+        + 5.86145544294642 * k1
+        - 12.92096931784711 * k2
+        + 8.159367898576159 * k3
+        + -0.071584973281401 * k4
+        - 0.028269050394068383 * k5,
+        h[5],
+        dt,
+        col,
+    )
+    k7 = func(
+        rho
+        + 0.09646076681806523 * k1
+        + 0.01 * k2
+        + 0.4798896504144996 * k3
+        + 1.379008574103742 * k4
+        - 3.290069515436081 * k5
+        + 2.324710524099774 * k6,
+        h[5],
+        dt,
+        col,
+    )
+    rho_new = (
+        rho
+        + 0.09468075576583945 * k1
+        + 0.009183565540343254 * k2
+        + 0.4877705284247616 * k3
+        + 1.234297566930479 * k4
+        - 2.7077123499835256 * k5
+        + 1.866628418170587 * k6
+        + 1.0 / 66 * k7
+    )
     return rho_new
 
-def lindblad_step(rho, h, col_ops, dt):
+
+@step_deco
+def lindblad(rho, h, dt, col):
     del_rho = -1j * commutator(h, rho)
-    for col in col_ops:
+    for col in col:
         del_rho += tf.matmul(tf.matmul(col, rho), tf.transpose(col, conjugate=True))
         del_rho -= 0.5 * anticommutator(
             tf.matmul(tf.transpose(col, conjugate=True), col), rho
@@ -859,35 +896,14 @@ def lindblad_step(rho, h, col_ops, dt):
     return del_rho * dt
 
 
-def commutator(A, B):
-    return tf.matmul(A, B) - tf.matmul(B, A)
+@step_deco
+def schrodinger(psi, h, dt, col=None):
+    return -1j * tf.matmul(h, psi) * dt
 
 
-def anticommutator(A, B):
-    return tf.matmul(A, B) + tf.matmul(B, A)
-
-def interpolateSignal(ts, sig, interpolate_res):
-    dt = ts[1] - ts[0]
-    if interpolate_res == -5:
-        ts = tf.cast(ts, dtype=tf.float64)
-        dt = ts[1] - ts[0]
-        ts_interp = tf.concat([ts, ts+1./5*dt, ts+3./10*dt, ts+4./5*dt, ts+8./9*dt, ts+dt], axis=0)
-        ts_interp = tf.sort(ts_interp)
-    elif interpolate_res == -6:
-        ts = tf.cast(ts, dtype=tf.float64)
-        dt = ts[1] - ts[0]
-        ts_interp = tf.concat([ts, ts+0.161*dt, ts+0.327*dt, ts+0.9*dt, ts+0.9800255409045097*dt, ts+dt], axis=0)
-        ts_interp = tf.sort(ts_interp)
-    else:
-        ts_interp = tf.linspace(ts[0], ts[-1] + dt, tf.shape(ts)[0] * interpolate_res + 1)
-    return tfp.math.interp_regular_1d_grid(
-        ts_interp,
-        ts[0],
-        ts[-1],
-        sig,
-        fill_value="extrapolate"
-    )
-
+@step_deco
+def von_neumann(rho, h, dt, col=None):
+    return -1j * commutator(h, rho) * dt
 
 @state_deco
 def stochastic_schrodinger_rk4(
@@ -1022,249 +1038,3 @@ def stochastic_lind_traj(h, psi, dt, col_ops, coherent_ev_flag, col_flags, solve
 
         psi_new = tf.math.l2_normalize(psi_new)
         return psi_new
-
-
-@state_deco
-def schrodinger_rk4(
-    model: Model,
-    gen: Generator,
-    instr: Instruction,
-    init_state=None,
-    solver="rk4",
-    renormalize_step=None
-) -> Dict:
-
-    if solver == "rk4":
-        interpolate_res = 2
-    elif solver == "rk38":
-        interpolate_res = 3
-    elif solver == "rk5":
-        interpolate_res = -5 # Fixing this a random number for now
-    elif solver == "Tsit5":
-        interpolate_res = -6 # Fixing this a random number for now
-
-    Hs_dict = Hs_of_t(model, gen, instr, interpolate_res=interpolate_res)
-    Hs = Hs_dict["Hs"]
-    ts = Hs_dict["ts"]
-    dt = Hs_dict["dt"]
-
-    psi_list = tf.TensorArray(
-                    tf.complex128, 
-                    size=ts.shape[0], 
-                    dynamic_size=False, 
-                    infer_shape=False
-    )
-    psi_t = init_state
-    for index in tf.range(ts.shape[0]):        
-        if solver =="rk38":
-            h = tf.slice(Hs, [3*index, 0, 0], [4, Hs.shape[1], Hs.shape[2]])
-            psi_t = rk38_step_lind(schrodinger_step, psi_t, h, dt, col=None)
-        elif solver == "rk5":
-            h = tf.slice(Hs, [6*index, 0, 0], [6, Hs.shape[1], Hs.shape[2]])
-            psi_t = rk5_dopri_step_lind(schrodinger_step, psi_t, h, dt, col=None)
-        elif solver == "Tsit5":
-            h = tf.slice(Hs, [6*index, 0, 0], [6, Hs.shape[1], Hs.shape[2]])
-            psi_t = Tsit5_step_lind(schrodinger_step, psi_t, h, dt, col=None)
-        else:
-            h = tf.slice(Hs, [2*index, 0, 0], [3, Hs.shape[1], Hs.shape[2]])
-            psi_t = rk4_step_lind(schrodinger_step, psi_t, h, dt, col=None)
-
-        if renormalize_step != None:
-            if index%renormalize_step == 0:
-                psi_t = psi_t/tf.linalg.norm(psi_t)
-        
-        psi_list = psi_list.write(index, psi_t)
-    psi_list = psi_list.stack()
-
-    return {"states": psi_list, "ts": ts}
-
-
-@state_deco
-def vonNeumann_rk4(
-    model: Model,
-    gen: Generator,
-    instr: Instruction,
-    init_state=None,
-    solver="rk4"
-) -> Dict:
-
-    if solver == "rk4":
-        interpolate_res = 2
-    elif solver == "rk38":
-        interpolate_res = 3
-    elif solver == "rk5":
-        interpolate_res = -5 # Fixing this a random number for now
-    elif solver == "Tsit5":
-        interpolate_res = -6 # Fixing this a random number for now
-
-    Hs_dict = Hs_of_t(model, gen, instr, interpolate_res=interpolate_res)
-    Hs = Hs_dict["Hs"]
-    ts = Hs_dict["ts"]
-    dt = Hs_dict["dt"]
-
-    rho_list = tf.TensorArray(
-                    tf.complex128, 
-                    size=ts.shape[0], 
-                    dynamic_size=False, 
-                    infer_shape=False
-    )
-    rho_t = init_state
-    for index in tf.range(ts.shape[0]):
-        if solver =="rk38":
-            h = tf.slice(Hs, [3*index, 0, 0], [4, Hs.shape[1], Hs.shape[2]])
-            rho_t = rk38_step_lind(vonNeumann_step, rho_t, h, dt, col=None)
-        elif solver == "rk5":
-            h = tf.slice(Hs, [6*index, 0, 0], [6, Hs.shape[1], Hs.shape[2]])
-            rho_t = rk5_dopri_step_lind(vonNeumann_step, rho_t, h, dt, col=None)
-        elif solver == "Tsit5":
-            h = tf.slice(Hs, [6*index, 0, 0], [6, Hs.shape[1], Hs.shape[2]])
-            rho_t = Tsit5_step_lind(vonNeumann_step, rho_t, h, dt, col=None)
-        else:
-            h = tf.slice(Hs, [2*index, 0, 0], [3, Hs.shape[1], Hs.shape[2]])
-            rho_t = rk4_step_lind(vonNeumann_step, rho_t, h, dt, col=None)
-
-        rho_list = rho_list.write(index, rho_t)
-    rho_list = rho_list.stack()
-
-    return {"states": rho_list, "ts": ts}
-
-
-def vonNeumann_step(rho, h, dt):
-    return -1j * commutator(h, rho)*dt
-
-#@state_deco
-#def stochastic_schrodinger_rk4(
-#    model: Model,
-#    generator: Generator, 
-#    instruction: Instruction,
-#    collapse_ops: tf.Tensor, 
-#    psi_init: tf.Tensor,
-#    L_dag_L: tf.Tensor,
-#    plist: tf.Tensor,
-#    solver="rk4",
-#) -> Dict:
-#
-#    if solver == "rk4":
-#        interpolate_res = 2
-#    elif solver == "rk38":
-#        interpolate_res = 3
-#
-#    hs_of_t_ts = Hs_of_t(model, generator, instruction, L_dag_L=L_dag_L, interpolate_res=interpolate_res) 
-#    hs = hs_of_t_ts["Hs"]
-#    ts = hs_of_t_ts["ts"]
-#    dt = hs_of_t_ts["dt"]
-#
-#    psi_list = propagate_stochastic_lind(
-#                        model, 
-#                        hs, 
-#                        collapse_ops, 
-#                        psi_init, 
-#                        ts, 
-#                        dt, 
-#                        L_dag_L, 
-#                        plist, 
-#                        solver=solver
-#    )
-#    return {"states":psi_list, "ts": ts}
-#
-#
-#def propagate_stochastic_lind(model, hs, collapse_ops, psi_init, ts, dt, L_dag_L, plist, solver="rk4"):
-#    psi = psi_init
-#    psi_list = tf.TensorArray(
-#                    tf.complex128,
-#                    size=ts.shape[0],
-#                    dynamic_size=False, 
-#                    infer_shape=False
-#    )
-#
-#    for index in tf.range(ts.shape[0]):
-#        relax_op_list = []
-#        dec_op_list = []
-#        temp_op_list = []
-#        coherent_ev_flag = 1
-#        counter = 0
-#        for key in model.subsystems:
-#            time1 = plist[counter][0][index]
-#            time2 = plist[counter][1][index]
-#            time_temp = plist[counter][2][index]
-#
-#            relax_op = time1 * collapse_ops[counter][0]
-#            dec_op = time2 * collapse_ops[counter][1]
-#            temp_op = time_temp * collapse_ops[counter][2]
-#
-#            relax_op_list.append(relax_op)
-#            dec_op_list.append(dec_op)
-#            temp_op_list.append(temp_op)
-#            
-#            coherent_ev_flag = coherent_ev_flag * (1 - time1) * (1 - time2) * (1 - time_temp)
-#
-#            counter += 1
-#        
-#        if solver == "rk38":
-#            h = tf.slice(hs, [3*index, 0, 0], [4, hs.shape[1], hs.shape[2]])
-#        else:
-#            h = tf.slice(hs, [2*index, 0, 0], [3, hs.shape[1], hs.shape[2]])
-#        psi = rk4_lind_traj(h, psi, dt, relax_op_list, dec_op_list, temp_op_list, coherent_ev_flag, L_dag_L, solver=solver)
-#        psi_list = psi_list.write(index, psi)
-#    
-#    return psi_list.stack()
-#
-#def stochastic_step(psi, h, dt):
-#    return - 1j*tf.matmul(h, psi)*dt
-#
-#
-#def rk4_lind_traj(h, psi, dt, relax_ops, dec_ops, temp_ops, coherent_ev_flag, L_dag_L, solver="rk4"):
-#    """
-#    Calculates the single time step lindbladian evoultion
-#    of a state vector.
-#    Parameters:
-#    h: Hamiltonian at given time step
-#    psi: state vector
-#    time1, time2: 1 iff the the relaxation, decoherence operators
-#        are to be applied
-#    relax_op: relaxion operator
-#    dec_op: decoherence operator
-#    """
-#    # TODO - check for normalization of the states
-#    # TODO - What happens if two of them become one at the same time
-#
-#    pjk = []
-#    for values in L_dag_L:
-#        del_pk_T1 = tf.matmul(
-#                tf.transpose(psi, conjugate=True),
-#                tf.matmul(
-#                    values[0], psi
-#                )
-#        )[0][0]
-#        del_pk_T2 = tf.matmul(
-#                tf.transpose(psi, conjugate=True),
-#                tf.matmul(
-#                    values[1], psi
-#                )
-#        )[0][0]
-#        del_pk_Temp = tf.matmul(
-#                tf.transpose(psi, conjugate=True),
-#                tf.matmul(
-#                    values[2], psi
-#                )
-#        )[0][0]
-#
-#        pjk.append([del_pk_T1, del_pk_T2, del_pk_Temp])
-#
-#    pj = tf.reduce_sum(pjk) * dt
-#
-#    if solver == "rk38":
-#        psi_new = coherent_ev_flag * rk38_step_lind(stochastic_step, psi, h, dt) * (1/tf.sqrt(1 - pj))
-#    else:
-#        psi_new = coherent_ev_flag * rk4_step_lind(stochastic_step, psi, h, dt) * (1/tf.sqrt(1 - pj))
-#
-#    # TODO - check if the condition below is correct. I have used this just for the time being.
-#    if tf.reduce_prod(pjk) != 0:
-#        for i in range(len(relax_ops)):
-#            psi_new = (
-#                        psi_new 
-#                        + tf.linalg.matmul(relax_ops[i],psi) * tf.sqrt(1/pjk[i][0])
-#                        + tf.linalg.matmul(dec_ops[i],psi) *   tf.sqrt(1/pjk[i][1])
-#                        + tf.linalg.matmul(temp_ops[i],psi) *  tf.sqrt(1/pjk[i][2])
-#                    )
-#    return psi_new

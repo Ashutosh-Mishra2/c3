@@ -999,19 +999,27 @@ def swap_and_readout(
 
 
 @fid_reg_deco
-def state_transfer_from_states(
-    states: List[tf.Tensor], index, dims, params, n_eval=-1
-):
+def state_transfer_from_states(states: tf.Tensor, index, dims, params, n_eval=-1):
     infids = []
-    psi_0 = params["psi_0"]
-    overlap = calculateStateOverlap(states[-1], psi_0)
+    psi_0 = params["target"]
+
+    if len(states.shape) > 2:
+        overlap = calculate_state_overlap(states[-1], psi_0)
+    else:
+        overlap = calculate_state_overlap(states, psi_0)
+
     infid = 1 - overlap
     infids.append(infid)
     return tf.reduce_max(tf.math.real(infids))
 
-def calculateStateOverlap(psi1, psi2):
+
+def calculate_state_overlap(psi1, psi2):
     if psi1.shape[0] == psi1.shape[1]:
-        return tf.linalg.trace(tf.matmul(tf.transpose(psi1, conjugate=True), psi2))
+        return (
+            tf.linalg.trace(
+                tf.sqrt(tf.matmul(tf.matmul(tf.sqrt(psi1), psi2), tf.sqrt(psi1)))
+            )
+        ) ** 2
     else:
         return tf_ketket_fid(psi1, psi2)
 
@@ -1095,8 +1103,8 @@ def swap_and_readout_ode(
 
     print(states_e[swap_position])
 
-    overlap_e = calculateStateOverlap(states_e[swap_position], swap_target_e)
-    overlap_g = calculateStateOverlap(states_g[swap_position], swap_target_g)
+    overlap_e = calculate_state_overlap(states_e[swap_position], swap_target_e)
+    overlap_g = calculate_state_overlap(states_g[swap_position], swap_target_g)
     swap_infid = 1 - (overlap_e + overlap_g)/2
     swap_infid = tf.cast(swap_infid, dtype=tf.complex128)
     infid += swap_infid

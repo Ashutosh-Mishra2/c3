@@ -57,10 +57,9 @@ class OptimalControl(Optimizer):
         include_model=False,
         logger=None,
         fid_func_kwargs={},
-        states_solver=False,
-        init_state=None,
-        sequence=None,
-        readout=False,
+        ode_solver=None,
+        ode_step_function="schrodinger",
+        only_final_state=False,
     ) -> None:
         if type(algorithm) is str:
             algorithm = algorithms[algorithm]
@@ -82,14 +81,33 @@ class OptimalControl(Optimizer):
         self.interactive = interactive
         self.update_model = include_model
         self.fid_func_kwargs = fid_func_kwargs
-        self.state_solver = states_solver
-        self.init_state = init_state
-        self.sequence = sequence
-        self.readout = readout
         self.run = (
             self.optimize_controls
         )  # Alias the legacy name for the method running the
         # optimization
+        self.set_goal_function(
+            ode_solver=ode_solver,
+            ode_step_function=ode_step_function,
+            only_final_state=only_final_state,
+        )
+
+    def set_goal_function(
+        self,
+        ode_solver=None,
+        ode_step_function="schrodinger",
+        only_final_state=False,
+    ):
+        self.ode_solver = ode_solver
+        self.ode_step_function = ode_step_function
+        self.only_final_state = only_final_state
+
+        if self.ode_solver is not None:
+            if self.only_final_state:
+                self.goal_function = self.goal_run_ode_only_final
+            else:
+                self.goal_function = self.goal_run_ode
+        else:
+            self.goal_function = self.goal_run
 
     def set_fid_func(self, fid_func) -> None:
         if type(fid_func) is str:
@@ -181,60 +199,79 @@ class OptimalControl(Optimizer):
         """
         self.pmap.set_parameters_scaled(current_params)
         dims = self.pmap.model.dims
-        if self.state_solver:
-            if self.init_state == None:
-                raise Exception(
-                    "Specify the initial state for the evolution"
-                )
-            if self.sequence == None:
-                raise Exception(
-                    "Specify the sequence of gates for evolution"
-                )
-            result = self.exp.solve_lindblad_ode(self.init_state, self.sequence)
-            states = result["states"]
+        propagators = self.exp.compute_propagators()
 
-            if self.readout:
-                try:
-                    ground_state = self.fid_func_kwargs["ground_state"]
-                except:
-                    raise Exception(
-                        "Specify the ground state to calculate the IQ distance."
-                    )
-                result_g = self.exp.solve_lindblad_ode(ground_state, self.sequence)
-                states_g = result_g["states"]
-                #try:
-                goal = self.fid_func(
-                    states_e=states,
-                    states_g=states_g,
-                    index=self.index,
-                    dims=dims,
-                    n_eval=self.evaluation + 1,
-                    **self.fid_func_kwargs,
-                )
-                #except:
-                #    raise Exception(
-                #        "Use a fidelity function compatible with readout."
-                #    )
+        goal = self.fid_func(
+            propagators=propagators,
+            instructions=self.pmap.instructions,
+            index=self.index,
+            dims=dims,
+            n_eval=self.evaluation + 1,
+            **self.fid_func_kwargs,
+        )
+        self.evaluation += 1
+        return goal
 
-            else:
-                goal = self.fid_func(
-                    states=states,
-                    index=self.index,
-                    dims=dims,
-                    n_eval=self.evaluation + 1,
-                    **self.fid_func_kwargs,
-                )
-            self.evaluation += 1
-        else:
-            propagators = self.exp.compute_propagators()
+    @tf.function
+    def goal_run_ode(self, current_params: tf.Tensor) -> tf.float64:
+        """
+        Evaluate the goal function using ode solver for current parameters.
 
-            goal = self.fid_func(
-                propagators=propagators,
-                instructions=self.pmap.instructions,
-                index=self.index,
-                dims=dims,
-                n_eval=self.evaluation + 1,
-                **self.fid_func_kwargs,
-            )
-            self.evaluation += 1
+        Parameters
+        ----------
+        current_params : tf.Tensor
+            Vector representing the current parameter values.
+
+        Returns
+        -------
+        tf.float64
+            Value of the goal function
+        """
+        self.pmap.set_parameters_scaled(current_params)
+        dims = self.pmap.model.dims
+        result = self.exp.compute_states(
+            solver=self.ode_solver, step_function=self.ode_step_function
+        )
+        states = result["states"]
+
+        goal = self.fid_func(
+            states=states,
+            index=self.index,
+            dims=dims,
+            n_eval=self.evaluation + 1,
+            **self.fid_func_kwargs,
+        )
+        self.evaluation += 1
+        return goal
+
+    @tf.function
+    def goal_run_ode_only_final(self, current_params: tf.Tensor) -> tf.float64:
+        """
+        Evaluate the goal function using ode solver for current parameters.
+
+        Parameters
+        ----------
+        current_params : tf.Tensor
+            Vector representing the current parameter values.
+
+        Returns
+        -------
+        tf.float64
+            Value of the goal function
+        """
+        self.pmap.set_parameters_scaled(current_params)
+        dims = self.pmap.model.dims
+        result = self.exp.compute_final_state(
+            solver=self.ode_solver, step_function=self.ode_step_function
+        )
+        state = result["states"]
+
+        goal = self.fid_func(
+            states=state,
+            index=self.index,
+            dims=dims,
+            n_eval=self.evaluation + 1,
+            **self.fid_func_kwargs,
+        )
+        self.evaluation += 1
         return goal

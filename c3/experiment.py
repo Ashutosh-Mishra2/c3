@@ -8,7 +8,6 @@ Given this information an experiment run is simulated, returning either processe
 states or populations.
 """
 
-from ast import Num
 import os
 import copy
 import pickle
@@ -16,7 +15,7 @@ import itertools
 import hjson
 import numpy as np
 import tensorflow as tf
-from typing import Dict, List
+from typing import Dict
 import time
 
 from c3.c3objs import hjson_encode, hjson_decode
@@ -36,7 +35,6 @@ from c3.libraries.propagation import unitary_provider, state_provider
 
 from c3.utils.qt_utils import perfect_single_q_parametric_gate
 
-from c3.libraries.constants import kb, hbar
 
 class Experiment:
     """
@@ -72,6 +70,7 @@ class Experiment:
         self.stop_partial_propagator_gradient = True
         self.evaluate = self.evaluate_legacy
         self.sim_res = sim_res
+        self.prop_method = prop_method
         self.set_prop_method(prop_method)
 
     def set_prop_method(self, prop_method=None) -> None:
@@ -438,38 +437,6 @@ class Experiment:
 
         return gates
 
-    def compute_states(self) -> Dict[Instruction, List[tf.Tensor]]:
-        """Employ a state solver to compute the trajectory of the system.
-
-        Returns
-        -------
-        List[tf.tensor]
-            List of states of the system from simulation.
-
-        """
-        model = self.pmap.model
-        generator = self.pmap.generator
-        instructions = self.pmap.instructions
-        states = {}
-
-        gate_ids = self.opt_gates
-        if gate_ids is None:
-            gate_ids = instructions.keys()
-
-        for gate in gate_ids:
-            try:
-                instr = instructions[gate]
-            except KeyError:
-                raise Exception(
-                    f"C3:Error: Gate '{gate}' is not defined."
-                    f" Available gates are:\n {list(instructions.keys())}."
-                )
-            signal = generator.generate_signals(instr)
-            result = self.propagation(model, signal, self.folding_stack)
-            states[instr] = result["states"]
-        self.states = states
-        return result
-
     def compute_propagators(self):
         """
         Compute the unitary representation of operations. If no operations are
@@ -488,6 +455,8 @@ class Experiment:
         gate_ids = self.opt_gates
         if gate_ids is None:
             gate_ids = instructions.keys()
+
+        self.set_prop_method(self.prop_method)
 
         for gate in gate_ids:
             try:
@@ -661,36 +630,33 @@ class Experiment:
             rho = tf_state_to_dm(state)
         trace = np.trace(np.matmul(rho, oper))
         return [[np.real(trace)]]  # ,[np.imag(trace)]]
-    
-    def solve_lindblad_ode(self, init_state, sequence, solver="rk4"):
+
+    def compute_states(self, solver="rk4", step_function="schrodinger"):
         """
-        Solve the Lindblad master equation by integrating the differential
-        equation of the density matrix
+        Use a state solver to compute the trajectory of the system.
 
         Returns
         -------
-        List
-            A List of states for the time evolution.
+        List[tf.tensor]
+            List of states of the system from simulation.
+
         """
 
         model = self.pmap.model
-        if not model.lindbladian:
-            raise Exception(
-                "model.lindbladian is False."
-                + "This method is only implemented for master equation solution."
-            )
-
         generator = self.pmap.generator
         instructions = self.pmap.instructions
-        model.controllability = self.use_control_fields
-        collapse_ops = model.get_Lindbladians()
 
-        rho_init = init_state
+        init_state = self.pmap.model.get_init_state()
+        if step_function == "von_neumann":
+            init_state = tf_state_to_dm(init_state)
         ts_init = tf.constant(0.0, dtype=tf.complex128)
-        self.set_prop_method("lindblad_rk4")
 
-        rho_list = tf.expand_dims(rho_init, 0)
+        state_list = tf.expand_dims(init_state, 0)
         ts_list = [ts_init]
+
+        sequence = self.opt_gates
+
+        self.set_prop_method("ode_solver")
 
         for gate in sequence:
             try:
@@ -700,14 +666,63 @@ class Experiment:
                     f"C3:Error: Gate '{gate}' is not defined."
                     f" Available gates are:\n {list(instructions.keys())}."
                 )
-            result = self.propagation(model, generator, instr, collapse_ops, rho_init, solver=solver)
-            rho_list = tf.concat([rho_list, result["states"]], 0)
+            result = self.propagation(
+                model,
+                generator,
+                instr,
+                init_state,
+                solver=solver,
+                step_function=step_function,
+            )
+            state_list = tf.concat([state_list, result["states"]], 0)
             ts_list = tf.concat([ts_list, tf.add(result["ts"], ts_init)], 0)
-            rho_init = result["states"][-1]
+            init_state = result["states"][-1]
             ts_init = result["ts"][-1]
 
-        # TODO - Add Frame rotation and dephasing strength
-        return {"states": rho_list, "ts": ts_list}
+        return {"states": state_list, "ts": ts_list}
+
+    def compute_final_state(self, solver="rk4", step_function="schrodinger"):
+        """
+        Solve the Lindblad master equation by integrating the differential
+        equation of the density matrix
+
+        Returns
+        -------
+        List
+           Final state after time evolution.
+        """
+
+        model = self.pmap.model
+        generator = self.pmap.generator
+        instructions = self.pmap.instructions
+
+        init_state = self.pmap.model.get_init_state()
+        if step_function == "von_neumann":
+            init_state = tf_state_to_dm(init_state)
+
+        sequence = self.opt_gates
+        self.set_prop_method("ode_solver_final_state")
+
+        for gate in sequence:
+            try:
+                instr = instructions[gate]
+            except KeyError:
+                raise Exception(
+                    f"C3:Error: Gate '{gate}' is not defined."
+                    f" Available gates are:\n {list(instructions.keys())}."
+                )
+            result = self.propagation(
+                model,
+                generator,
+                instr,
+                init_state,
+                solver=solver,
+                step_function=step_function,
+            )
+            init_state = result["states"]
+            ts = result["ts"]
+
+        return {"states": result["states"], "ts": ts[-1]}
 
     def solve_stochastic_ode(
         self, 
@@ -857,12 +872,6 @@ class Experiment:
 
 
     @tf.function
-    def test_function(self, Num_batches):
-        for i in range(Num_batches):
-            print("Testing")
-        return 0, 0
-
-    @tf.function
     def single_stochastic_run(self, plist_seq):
         print("Tracing Single stochastic run")
         sequence = self.sequence
@@ -961,111 +970,3 @@ class Experiment:
 
             counter += 1
         return tf.cast(plists, dtype=tf.complex128)
-
-
-    def schrodinger_evolution_rk4(
-        self, 
-        init_state, 
-        sequence,
-        solver="rk4",
-        renormalize_step=None
-    ):
-
-        """
-        Solves the schrodinger equation by RK4 method.
-
-        Returns
-        -------
-        List
-            A List of states for the time evolution.
-        """
-        
-        model = self.pmap.model
-        if model.lindbladian:
-            raise Exception(
-                "model.lindbladian is True."
-                + "This method is for coherent evoulution of state."
-            )
-
-        self.set_prop_method("schrodinger_rk4")
-
-        generator = self.pmap.generator
-        instructions = self.pmap.instructions
-        model.controllability = self.use_control_fields
-        model.controllability = self.use_control_fields
-        
-        psi_init = init_state
-        ts_init = tf.constant(0.0, dtype=tf.complex128)
-
-        psi_list = tf.expand_dims(psi_init, 0)
-        ts_list = [ts_init]
-
-        for gate in sequence:
-            try:
-                instr = instructions[gate]
-            except KeyError:
-                raise Exception(
-                    f"C3:Error: Gate '{gate}' is not defined."
-                    f" Available gates are:\n {list(instructions.keys())}."
-                )
-            result = self.propagation(model, generator, instr, psi_init, solver=solver, renormalize_step=renormalize_step)
-            psi_list = tf.concat([psi_list, result["states"]], 0)
-            ts_list = tf.concat([ts_list, tf.add(result["ts"], ts_init)], 0)
-            psi_init = result["states"][-1]
-            ts_init = result["ts"][-1]
-
-        return {"states": psi_list, "ts": ts_list}
-
-
-    def von_Neumann_rk4(
-        self, 
-        init_state, 
-        sequence,
-        solver="rk4"
-    ):
-
-        """
-        Solves the von Neumann equation by RK4 method.
-
-        Returns
-        -------
-        List
-            A List of states for the time evolution.
-        """
-        
-        model = self.pmap.model
-        if model.lindbladian:
-            raise Exception(
-                "model.lindbladian is True."
-                + "This method is for coherent evoulution of state."
-            )
-
-        self.set_prop_method("vonNeumann_rk4")
-
-        generator = self.pmap.generator
-        instructions = self.pmap.instructions
-        model.controllability = self.use_control_fields
-        model.controllability = self.use_control_fields
-        
-        rho_init = init_state
-        rho_init = tf_state_to_dm(rho_init)
-        ts_init = tf.constant(0.0, dtype=tf.complex128)
-
-        rho_list = tf.expand_dims(rho_init, 0)
-        ts_list = [ts_init]
-
-        for gate in sequence:
-            try:
-                instr = instructions[gate]
-            except KeyError:
-                raise Exception(
-                    f"C3:Error: Gate '{gate}' is not defined."
-                    f" Available gates are:\n {list(instructions.keys())}."
-                )
-            result = self.propagation(model, generator, instr, rho_init, solver=solver)
-            rho_list = tf.concat([rho_list, result["states"]], 0)
-            ts_list = tf.concat([ts_list, tf.add(result["ts"], ts_init)], 0)
-            rho_init = result["states"][-1]
-            ts_init = result["ts"][-1]
-
-        return {"states": rho_list, "ts": ts_list}
