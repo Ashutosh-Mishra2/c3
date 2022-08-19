@@ -34,6 +34,7 @@ from c3.utils.tf_utils import (
 from c3.libraries.propagation import unitary_provider, state_provider
 
 from c3.utils.qt_utils import perfect_single_q_parametric_gate
+from scipy.integrate import ode
 
 
 class Experiment:
@@ -970,3 +971,52 @@ class Experiment:
 
             counter += 1
         return tf.cast(plists, dtype=tf.complex128)
+
+
+    def compute_states_scipy(self, solver="zvode"):
+        """
+        Use a state solver to compute the trajectory of the system.
+
+        Returns
+        -------
+        List[tf.tensor]
+            List of states of the system from simulation.
+
+        """
+
+        model = self.pmap.model
+        generator = self.pmap.generator
+        instructions = self.pmap.instructions
+
+        init_state = self.pmap.model.get_init_state()
+        ts_init = tf.constant(0.0, dtype=tf.complex128)
+
+        state_list = tf.expand_dims(init_state, 0)
+        ts_list = [ts_init]
+
+        sequence = self.opt_gates
+
+        self.set_prop_method("scipy_integrate")
+
+        for gate in sequence:
+            try:
+                instr = instructions[gate]
+            except KeyError:
+                raise Exception(
+                    f"C3:Error: Gate '{gate}' is not defined."
+                    f" Available gates are:\n {list(instructions.keys())}."
+                )
+            result = self.propagation(
+                model,
+                generator,
+                instr,
+                init_state,
+                solver=solver,
+            )
+            state_list = tf.concat([state_list, result["states"]], 0)
+            ts_list = tf.concat([ts_list, tf.add(result["ts"], ts_init)], 0)
+            init_state = result["states"][-1]
+            ts_init = result["ts"][-1]
+
+        return {"states": state_list, "ts": ts_list}
+

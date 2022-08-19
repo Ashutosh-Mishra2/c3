@@ -14,6 +14,7 @@ from c3.utils.tf_utils import (
     commutator,
     anticommutator,
 )
+from scipy import interpolate, integrate
 
 unitary_provider = dict()
 state_provider = dict()
@@ -1015,3 +1016,68 @@ def stochastic_lind_traj(h, psi, dt, col_ops, coherent_ev_flag, col_flags, solve
 
         psi_new = tf.math.l2_normalize(psi_new)
         return psi_new
+
+
+@state_deco
+def scipy_integrate(
+    model: Model, gen: Generator, instr: Instruction, init_state, solver="zvode") -> Dict:
+
+    signal = gen.generate_signals(instr)
+    h0, hctrls = model.get_Hamiltonians()
+
+    ts_list = []
+    signals = []
+    hks = []
+    for key in signal:
+        ts_list.append(signal[key]["ts"])
+        signals.append(signal[key]["values"])
+        hks.append(hctrls[key])
+            
+    ts = tf.reduce_mean(ts_list, axis=0)
+    dt = ts[1] - ts[0]
+    nsteps = ts.shape[0]
+
+    signal_functions = []
+    for sig in signals:
+        signal_fun = interpolate.interp1d(ts, sig, fill_value="extrapolate")
+        signal_functions.append(signal_fun)
+
+    if model.lindbladian:
+        col = model.get_Lindbladians()
+    else:
+        col = None
+
+    states_list = []
+
+    def ham_func(t):
+        ham = h0
+        i = 0
+        for sig_fun in signal_functions:
+            ham += sig_fun(t) * hks[i]
+            i += 1
+        return  ham
+
+    if model.lindbladian:
+        def ode_func(t, rho):
+            del_rho = -1j * commutator(ham_func(t), rho)
+            for col in col:
+                del_rho += tf.matmul(tf.matmul(col, rho), tf.transpose(col, conjugate=True))
+                del_rho -= 0.5 * anticommutator(
+                    tf.matmul(tf.transpose(col, conjugate=True), col), rho
+                )
+            return del_rho * dt
+    else:
+        def ode_func(t, psi):
+            return -1j*tf.linalg.matvec(ham_func(t), psi.T)
+
+    r = integrate.ode(ode_func)
+    r.set_integrator(solver, method="bdf", nsteps=nsteps)
+    r.set_initial_value(init_state, ts[0])
+
+    for i in range(nsteps):
+        states_list.append(r.integrate(r.t + dt))
+    
+    states = tf.convert_to_tensor(states_list, dtype=tf.complex128)
+    ts = tf.cast(ts, dtype=tf.complex128)
+
+    return {"states": states, "ts": ts}
