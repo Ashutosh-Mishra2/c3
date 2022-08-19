@@ -1020,7 +1020,11 @@ def stochastic_lind_traj(h, psi, dt, col_ops, coherent_ev_flag, col_flags, solve
 
 @state_deco
 def scipy_integrate(
-    model: Model, gen: Generator, instr: Instruction, init_state, solver="zvode") -> Dict:
+    model: Model, gen: Generator, instr: Instruction, init_state, solver, step_function) -> Dict:
+
+    solvers = ["vode", "zvode", "lsoda", "dopri5", "dop853"]
+    if solver not in solvers:
+        raise Exception(f"solver not found. Available solvers are {solvers}")
 
     signal = gen.generate_signals(instr)
     h0, hctrls = model.get_Hamiltonians()
