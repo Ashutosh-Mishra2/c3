@@ -908,36 +908,29 @@ def von_neumann(rho, h, dt, col=None):
 @state_deco
 def stochastic_schrodinger_rk4(
     model: Model,
-    generator: Generator, 
-    instruction: Instruction,
+    gen: Generator, 
+    instr: Instruction,
     collapse_ops: tf.Tensor, 
-    psi_init: tf.Tensor,
+    init_state: tf.Tensor,
     L_dag_L: tf.Tensor,
     plist: tf.Tensor,
     solver="rk4",
 ) -> Dict:
 
-    if solver == "rk4":
-        interpolate_res = 2
-    elif solver == "rk38":
-        interpolate_res = 3
-    elif solver == "rk5":
-        interpolate_res = -5 # Fixing this a random number for now
-    elif solver == "Tsit5":
-        interpolate_res = -6 # Fixing this a random number for now
-    elif solver == "exp":
-        interpolate_res = 1
+    signal = gen.generate_signals(instr)
+    interpolate_res = solver_slicing[solver][2]
 
-    hs_of_t_ts = Hs_of_t(model, generator, instruction, L_dag_L=L_dag_L, interpolate_res=interpolate_res) 
-    hs = hs_of_t_ts["Hs"]
+    #TODO - model.Hs_of_t does not take L_dag_L right now
+    hs_of_t_ts = model.Hs_of_t(signal, L_dag_L=L_dag_L, interpolate_res=interpolate_res)
+    Hs = hs_of_t_ts["Hs"]
     ts = hs_of_t_ts["ts"]
     dt = hs_of_t_ts["dt"]
 
     psi_list = propagate_stochastic_lind(
                         model, 
-                        hs, 
+                        Hs, 
                         collapse_ops, 
-                        psi_init, 
+                        init_state, 
                         ts, 
                         dt, 
                         L_dag_L, 
@@ -948,6 +941,11 @@ def stochastic_schrodinger_rk4(
 
 
 def propagate_stochastic_lind(model, hs, collapse_ops, psi_init, ts, dt, L_dag_L, plist, solver="rk4"):
+    
+    start = solver_slicing[solver][0]
+    stop = solver_slicing[solver][1]
+    solver_function = solver_dict[solver]
+    
     psi = psi_init
     psi_list = tf.TensorArray(
                     tf.complex128,
@@ -976,17 +974,9 @@ def propagate_stochastic_lind(model, hs, collapse_ops, psi_init, ts, dt, L_dag_L
 
             counter += 1
         
-        if solver == "rk38":
-            h = tf.slice(hs, [3*index, 0, 0], [4, hs.shape[1], hs.shape[2]])
-        elif solver == "rk5":
-            h = tf.slice(hs, [6*index, 0, 0], [6, hs.shape[1], hs.shape[2]])
-        elif solver == "Tsit5":
-            h = tf.slice(hs, [6*index, 0, 0], [6, hs.shape[1], hs.shape[2]])
-        elif solver == "rk4":
-            h = tf.slice(hs, [2*index, 0, 0], [3, hs.shape[1], hs.shape[2]])
-        else:
-            h = tf.slice(hs, [index, 0, 0], [1, hs.shape[1], hs.shape[2]])
-        psi = stochastic_lind_traj(h, psi, dt, col_ops, coherent_ev_flag, col_flags, solver=solver)
+        h = tf.slice(hs, [start * index, 0, 0], [stop, hs.shape[1], hs.shape[2]])
+        
+        psi = stochastic_lind_traj(h, psi, dt, col_ops, coherent_ev_flag, col_flags, solver_function)
         psi_list = psi_list.write(index, psi)
     
     return psi_list.stack()
@@ -995,7 +985,7 @@ def schrodinger_step(psi, h, dt):
     return -1j*tf.matmul(h, psi)*dt
 
 
-def stochastic_lind_traj(h, psi, dt, col_ops, coherent_ev_flag, col_flags, solver="rk4"):
+def stochastic_lind_traj(h, psi, dt, col_ops, coherent_ev_flag, col_flags, solver_function):
     """
     Calculates the single time step lindbladian evoultion
     of a state vector.
@@ -1010,20 +1000,7 @@ def stochastic_lind_traj(h, psi, dt, col_ops, coherent_ev_flag, col_flags, solve
     """
     
     if coherent_ev_flag == 1:
-        if solver == "rk38":
-            psi_new = rk38_step_lind(schrodinger_step, psi, h, dt, col=None)
-            #psi_new = psi_new / tf.linalg.norm(psi_new)
-        elif solver == "rk5":
-            psi_new = rk5_dopri_step_lind(schrodinger_step, psi, h, dt, col=None)
-            #psi_new = psi_new / tf.linalg.norm(psi_new)
-        elif solver == "Tsit5":
-            psi_new = Tsit5_step_lind(schrodinger_step, psi, h, dt, col=None)
-            #psi_new = psi_new / tf.linalg.norm(psi_new)
-        elif solver == "rk4":
-            psi_new = rk4_step_lind(schrodinger_step, psi, h, dt, col=None)
-            #psi_new = psi_new / tf.linalg.norm(psi_new)
-        else:
-            psi_new = tf.matmul(tf.linalg.expm(-1.0j*h*dt), psi)
+        psi_new = solver_function(schrodinger, psi, h, dt, col=None)
         return psi_new
 
     else:
