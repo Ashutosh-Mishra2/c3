@@ -638,7 +638,7 @@ class Model:
             deph_ch = deph_ch * ((1 - p) * Id + p * Z)
         return deph_ch
 
-    def Hs_of_t(self, signal, interpolate_res=2):
+    def Hs_of_t(self, signal, interpolate_res=2, L_dag_L=None):
         """
         Generate a list of Hamiltonians for each time step of interpolated signal for Runge-Kutta Methods.
 
@@ -683,17 +683,19 @@ class Model:
         cflds = tf.cast(signals_interp, tf.complex128)
         hks = tf.cast(hks, tf.complex128)
 
-        Hs = self.calculate_sum_Hs(h0, hks, cflds)
+        Hs = self.calculate_sum_Hs(h0, hks, cflds, L_dag_L)
         ts = tf.cast(ts, dtype=tf.complex128)
 
         return {"Hs": Hs, "ts": ts, "dt": dt}
 
-    def calculate_sum_Hs(self, h0, hks, cflds):
+    def calculate_sum_Hs(self, h0, hks, cflds, L_dag_L):
         control_field = tf.reshape(
             tf.transpose(cflds), (tf.shape(cflds)[1], tf.shape(cflds)[0], 1, 1)
         )
         hk = tf.multiply(control_field, hks)
         Hs = tf.reduce_sum(hk, axis=1)
+        if L_dag_L is not None:
+            return Hs + h0 - 0.5j * tf.reduce_sum(tf.reduce_sum(L_dag_L, axis=0), axis=0)
         return Hs + h0
 
 

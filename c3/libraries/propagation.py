@@ -924,20 +924,19 @@ def stochastic_schrodinger_rk4(
     signal = gen.generate_signals(instr)
     interpolate_res = solver_slicing[solver][2]
 
-    # TODO - model.Hs_of_t does not take L_dag_L right now
-    hs_of_t_ts = model.Hs_of_t(signal, interpolate_res=interpolate_res)
+    hs_of_t_ts = model.Hs_of_t(signal, interpolate_res=interpolate_res, L_dag_L=L_dag_L)
     Hs = hs_of_t_ts["Hs"]
     ts = hs_of_t_ts["ts"]
     dt = hs_of_t_ts["dt"]
 
     psi_list = propagate_stochastic_lind(
-        model, Hs, collapse_ops, init_state, ts, dt, L_dag_L, plist, solver=solver
+        model, Hs, collapse_ops, init_state, ts, dt, plist, solver=solver
     )
     return {"states": psi_list, "ts": ts}
 
 
 def propagate_stochastic_lind(
-    model, hs, collapse_ops, psi_init, ts, dt, L_dag_L, plist, solver="rk4"
+    model, hs, collapse_ops, psi_init, ts, dt, plist, solver="rk4"
 ):
 
     start = solver_slicing[solver][0]

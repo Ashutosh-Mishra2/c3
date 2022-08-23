@@ -904,10 +904,10 @@ class Experiment:
                 )
             result = self.propagation(
                             model=model, 
-                            generator=generator, 
-                            instruction=instr, 
+                            gen=generator, 
+                            instr=instr, 
                             collapse_ops=collapse_ops, 
-                            psi_init=psi_init, 
+                            init_state=psi_init, 
                             L_dag_L=L_dag_L, 
                             plist=plist_seq[:,:,ts_last:ts_last + ts_len[gate]],
                             solver=solver
@@ -932,7 +932,7 @@ class Experiment:
         for key, sub in model.subsystems.items():
             try:
                 t1_val = sub.params["t1"].get_value()
-                pT1.append(0.5 * dt/t1_val)
+                pT1.append(1 * dt/t1_val)
             except KeyError:
                 raise Exception(
                     f"Error: T1 for {key} is not defined."
