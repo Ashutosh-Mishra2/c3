@@ -6,6 +6,7 @@ from c3.model import Model
 from c3.generator.generator import Generator
 from c3.signal.gates import Instruction
 from c3.utils.tf_utils import (
+    get_interpolated_signal_values,
     tf_kron,
     tf_matmul_left,
     tf_matmul_n,
@@ -15,6 +16,7 @@ from c3.utils.tf_utils import (
     anticommutator,
 )
 from scipy import interpolate, integrate
+import tensorflow_probability as tfp
 
 unitary_provider = dict()
 state_provider = dict()
@@ -906,12 +908,13 @@ def schrodinger(psi, h, dt, col=None):
 def von_neumann(rho, h, dt, col=None):
     return -1j * commutator(h, rho) * dt
 
+
 @state_deco
 def stochastic_schrodinger_rk4(
     model: Model,
-    gen: Generator, 
+    gen: Generator,
     instr: Instruction,
-    collapse_ops: tf.Tensor, 
+    collapse_ops: tf.Tensor,
     init_state: tf.Tensor,
     L_dag_L: tf.Tensor,
     plist: tf.Tensor,
@@ -921,38 +924,29 @@ def stochastic_schrodinger_rk4(
     signal = gen.generate_signals(instr)
     interpolate_res = solver_slicing[solver][2]
 
-    #TODO - model.Hs_of_t does not take L_dag_L right now
-    hs_of_t_ts = model.Hs_of_t(signal, L_dag_L=L_dag_L, interpolate_res=interpolate_res)
+    # TODO - model.Hs_of_t does not take L_dag_L right now
+    hs_of_t_ts = model.Hs_of_t(signal, interpolate_res=interpolate_res)
     Hs = hs_of_t_ts["Hs"]
     ts = hs_of_t_ts["ts"]
     dt = hs_of_t_ts["dt"]
 
     psi_list = propagate_stochastic_lind(
-                        model, 
-                        Hs, 
-                        collapse_ops, 
-                        init_state, 
-                        ts, 
-                        dt, 
-                        L_dag_L, 
-                        plist, 
-                        solver=solver
+        model, Hs, collapse_ops, init_state, ts, dt, L_dag_L, plist, solver=solver
     )
-    return {"states":psi_list, "ts": ts}
+    return {"states": psi_list, "ts": ts}
 
 
-def propagate_stochastic_lind(model, hs, collapse_ops, psi_init, ts, dt, L_dag_L, plist, solver="rk4"):
-    
+def propagate_stochastic_lind(
+    model, hs, collapse_ops, psi_init, ts, dt, L_dag_L, plist, solver="rk4"
+):
+
     start = solver_slicing[solver][0]
     stop = solver_slicing[solver][1]
     solver_function = solver_dict[solver]
-    
+
     psi = psi_init
     psi_list = tf.TensorArray(
-                    tf.complex128,
-                    size=ts.shape[0],
-                    dynamic_size=False, 
-                    infer_shape=False
+        tf.complex128, size=ts.shape[0], dynamic_size=False, infer_shape=False
     )
 
     for index in tf.range(ts.shape[0]):
@@ -971,22 +965,29 @@ def propagate_stochastic_lind(model, hs, collapse_ops, psi_init, ts, dt, L_dag_L
             temp_op = collapse_ops[counter][2]
             col_ops.append([relax_op, dec_op, temp_op])
 
-            coherent_ev_flag = coherent_ev_flag * (1 - time1) * (1 - time2) * (1 - time_temp)
+            coherent_ev_flag = (
+                coherent_ev_flag * (1 - time1) * (1 - time2) * (1 - time_temp)
+            )
 
             counter += 1
-        
+
         h = tf.slice(hs, [start * index, 0, 0], [stop, hs.shape[1], hs.shape[2]])
-        
-        psi = stochastic_lind_traj(h, psi, dt, col_ops, coherent_ev_flag, col_flags, solver_function)
+
+        psi = stochastic_lind_traj(
+            h, psi, dt, col_ops, coherent_ev_flag, col_flags, solver_function
+        )
         psi_list = psi_list.write(index, psi)
-    
+
     return psi_list.stack()
 
+
 def schrodinger_step(psi, h, dt):
-    return -1j*tf.matmul(h, psi)*dt
+    return -1j * tf.matmul(h, psi) * dt
 
 
-def stochastic_lind_traj(h, psi, dt, col_ops, coherent_ev_flag, col_flags, solver_function):
+def stochastic_lind_traj(
+    h, psi, dt, col_ops, coherent_ev_flag, col_flags, solver_function
+):
     """
     Calculates the single time step lindbladian evoultion
     of a state vector.
@@ -999,7 +1000,7 @@ def stochastic_lind_traj(h, psi, dt, col_ops, coherent_ev_flag, col_flags, solve
     relax_op: relaxion operator
     dec_op: decoherence operator
     """
-    
+
     if coherent_ev_flag == 1:
         psi_new = solver_function(schrodinger, psi, h, dt, col=None)
         return psi_new
@@ -1020,7 +1021,8 @@ def stochastic_lind_traj(h, psi, dt, col_ops, coherent_ev_flag, col_flags, solve
 
 @state_deco
 def scipy_integrate(
-    model: Model, gen: Generator, instr: Instruction, init_state, solver, step_function) -> Dict:
+    model: Model, gen: Generator, instr: Instruction, init_state, solver, step_function
+) -> Dict:
 
     solvers = ["vode", "zvode", "lsoda", "dopri5", "dop853"]
     if solver not in solvers:
@@ -1036,7 +1038,7 @@ def scipy_integrate(
         ts_list.append(signal[key]["ts"])
         signals.append(signal[key]["values"])
         hks.append(hctrls[key])
-            
+
     ts = tf.reduce_mean(ts_list, axis=0)
     dt = ts[1] - ts[0]
     nsteps = ts.shape[0]
@@ -1047,9 +1049,9 @@ def scipy_integrate(
         signal_functions.append(signal_fun)
 
     if model.lindbladian:
-        col = model.get_Lindbladians()
+        collapse = model.get_Lindbladians()
     else:
-        col = None
+        collapse = None
 
     states_list = []
 
@@ -1059,20 +1061,25 @@ def scipy_integrate(
         for sig_fun in signal_functions:
             ham += sig_fun(t) * hks[i]
             i += 1
-        return  ham
+        return ham
 
     if model.lindbladian:
-        def ode_func(t, rho):
-            del_rho = -1j * commutator(ham_func(t), rho)
-            for col in col:
-                del_rho += tf.matmul(tf.matmul(col, rho), tf.transpose(col, conjugate=True))
+
+        def ode_func(t, psi):
+            del_rho = -1j * commutator(ham_func(t), psi)
+            for col in collapse:
+                del_rho += tf.matmul(
+                    tf.matmul(col, psi), tf.transpose(col, conjugate=True)
+                )
                 del_rho -= 0.5 * anticommutator(
-                    tf.matmul(tf.transpose(col, conjugate=True), col), rho
+                    tf.matmul(tf.transpose(col, conjugate=True), col), psi
                 )
             return del_rho * dt
+
     else:
+
         def ode_func(t, psi):
-            return -1j*tf.linalg.matvec(ham_func(t), psi.T)
+            return -1j * tf.linalg.matvec(ham_func(t), psi.T)
 
     r = integrate.ode(ode_func)
     r.set_integrator(solver, method="bdf", nsteps=nsteps)
@@ -1080,8 +1087,75 @@ def scipy_integrate(
 
     for i in range(nsteps):
         states_list.append(r.integrate(r.t + dt))
-    
+
     states = tf.convert_to_tensor(states_list, dtype=tf.complex128)
     ts = tf.cast(ts, dtype=tf.complex128)
 
     return {"states": states, "ts": ts}
+
+
+def rk_using_butcher_tableau(func, rho, h, dt, tableau, col=None):
+    a, b, c = tableau
+    ks = []
+    for i in range(len(b)):
+        y_new = rho + tf.reduce_sum(tf.multiply(a[i], ks))
+        k_new = func(y_new, h[i], dt, col)
+        ks.append(k_new)
+    rho_new = rho + tf.reduce_sum(tf.multiply(b, ks), axis=0)
+    return rho_new
+
+
+@state_deco
+def stiff_ode_solver(
+    model: Model, gen: Generator, instr: Instruction, init_state, solver, step_function
+) -> Dict:
+
+    signal = gen.generate_signals(instr)
+    h0, hctrls = model.get_Hamiltonians()
+
+    ts_list = []
+    signals = []
+    hks = []
+    for key in signal:
+        ts_list.append(signal[key]["ts"])
+        signals.append(signal[key]["values"])
+        hks.append(hctrls[key])
+
+    ts = tf.reduce_mean(ts_list, axis=0)
+    dt = ts[1] - ts[0]
+
+    if model.lindbladian:
+        collapse = model.get_Lindbladians()
+    else:
+        collapse = None
+
+    def ham_func(t):
+        sigs = []
+        for sig in signals:
+            sigs.append(get_interpolated_signal_values(t, ts, sig))
+        sigs = tf.convert_to_tensor(sigs, dtype=tf.complex128)
+        ham = model.calculate_sum_Hs(h0, hks, sigs)
+        return ham
+
+    if model.lindbladian:
+
+        def ode_func(t, psi):
+            del_rho = -1j * commutator(ham_func(t), psi)
+            for col in collapse:
+                del_rho += tf.matmul(
+                    tf.matmul(col, psi), tf.transpose(col, conjugate=True)
+                )
+                del_rho -= 0.5 * anticommutator(
+                    tf.matmul(tf.transpose(col, conjugate=True), col), psi
+                )
+            return del_rho * dt
+
+    else:
+
+        def ode_func(t, psi):
+            return -1j * tf.linalg.matmul(ham_func(t), psi)
+
+    ts = tf.cast(ts, dtype=tf.float64)
+    results = tfp.math.ode.BDF().solve(ode_func, 0.0, init_state, solution_times=ts)
+
+    return {"states": results.states, "ts": ts}

@@ -558,6 +558,12 @@ def interpolate_signal(ts, sig, interpolate_res):
     )
 
 
+def get_interpolated_signal_values(t, ts, sig):
+    return tfp.math.interp_regular_1d_grid(
+        t, ts[0], ts[-1], sig, fill_value="extrapolate"
+    )
+
+
 def commutator(A, B):
     return tf.matmul(A, B) - tf.matmul(B, A)
 
