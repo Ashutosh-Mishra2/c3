@@ -856,7 +856,6 @@ class Experiment:
         # TODO - Add Frame rotation and dephasing strength
         return {"states": psi_shots, "ts": ts_list}
     
-    @tf.function
     def batch_propagate_sde(
                 self, 
                 plist_tensor: tf.TensorArray, 
