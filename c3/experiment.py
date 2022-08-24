@@ -832,12 +832,15 @@ class Experiment:
 
         plist_list = tf.convert_to_tensor(plist_list, dtype=tf.complex128)
 
+        single_stochastic_run_tf = tf.function(self.single_stochastic_run)
         if not enable_vec_map:
             psi_shots = []
             for num in range(Num_shots):
                 print(f"Running shot {num}")
-                psi_list, ts_list = self.single_stochastic_run(plist_list[num])
+                psi_list, ts_list = single_stochastic_run_tf(plist_list[num])
                 psi_shots.append(psi_list)
+            psi_shots = tf.convert_to_tensor(psi_shots, dtype=tf.complex128)
+            ts_list = tf.convert_to_tensor(ts_list, dtype=tf.complex128)
 
         elif enable_vec_map and (batch_size != None):
             Num_batches = int(tf.math.ceil(Num_shots/batch_size))
@@ -846,7 +849,7 @@ class Experiment:
             psi_shots, ts_list = self.batch_propagate_sde(plist_list)
         else:
             x = tf.convert_to_tensor(plist_list, dtype=tf.complex128)
-            psi_shots, ts_list = tf.vectorized_map(self.single_stochastic_run, x)
+            psi_shots, ts_list = tf.vectorized_map(single_stochastic_run_tf, x)
 
         if tf.reduce_any(tf.math.is_nan(tf.abs(psi_shots))):
             print("Some states are NaN.")
@@ -862,17 +865,17 @@ class Experiment:
             tf.complex128, size=self.Num_batches, dynamic_size=False, infer_shape=False
         )
         batch_size = self.batch_size
+        single_stochastic_run_tf = tf.function(self.single_stochastic_run)
         for i in tf.range(self.Num_batches):
             print(f"Tracing shot {i}")
             x = plist_tensor[i*batch_size: i*batch_size + batch_size]
-            psi_shots, ts_list = tf.vectorized_map(self.single_stochastic_run, x)
+            psi_shots, ts_list = tf.vectorized_map(single_stochastic_run_tf, x)
             batch_array = batch_array.write(i, psi_shots)
         batch_array = batch_array.concat()
 
         return batch_array, ts_list
 
 
-    @tf.function
     def single_stochastic_run(self, plist_seq):
         print("Tracing Single stochastic run")
         sequence = self.sequence
