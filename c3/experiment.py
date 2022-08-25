@@ -29,6 +29,7 @@ from c3.utils.tf_utils import (
     tf_vec_to_dm,
     _tf_matmul_n_even,
     _tf_matmul_n_odd,
+    calculate_expectation_value
 )
 
 from c3.libraries.propagation import unitary_provider, state_provider
@@ -823,7 +824,13 @@ class Experiment:
         for i in range(Num_shots):
             counter = 0
             for gate in sequence:
-                plist = self.precompute_dissipation_probs(model, ts_len[gate], dt)
+                plist = self.precompute_dissipation_probs(
+                                    model, 
+                                    ts_len[gate], 
+                                    dt, 
+                                    init_state, 
+                                    collapse_ops
+                )
                 if counter == 0:
                     plist_list.append(plist)
                 else:
@@ -923,7 +930,7 @@ class Experiment:
         return psi_list, ts_list
 
     @tf.function
-    def precompute_dissipation_probs(self, model, ts_len, dt):
+    def precompute_dissipation_probs(self, model, ts_len, dt, psi, col):
         # TODO - correct the probability values
         pT1 = []
         pT2 = []
@@ -934,14 +941,15 @@ class Experiment:
         for key, sub in model.subsystems.items():
             try:
                 t1_val = sub.params["t1"].get_value()
-                pT1.append(1 * dt/t1_val)
+                pT1.append(dt/t1_val)
+                #pT1.append(tf.abs(calculate_expectation_value(psi, col[counter][0]))[0]*dt)
             except KeyError:
                 raise Exception(
                     f"Error: T1 for {key} is not defined."
                 )
             try:
                 t2_val = sub.params["t2star"].get_value()
-                pT2.append(0.5 * dt/t2_val)
+                pT2.append(tf.abs(calculate_expectation_value(psi, col[counter][1]))[0]*dt)
             except KeyError:
                 raise Exception(
                     f"Error: T2Star for {key} is not defined."
@@ -949,7 +957,7 @@ class Experiment:
 
             try:
                 temp_val = sub.params["temp"].get_value()
-                pTemp.append(1/temp_val * dt) #TODO - check if there is a factor of Kb
+                pTemp.append(tf.abs(calculate_expectation_value(psi, col[counter][2]))[0]*dt) #TODO - check if there is a factor of Kb
             except KeyError:
                 raise Exception(
                     f"Error: Temp for {key} is not defined."
