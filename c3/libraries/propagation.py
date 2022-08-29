@@ -14,6 +14,7 @@ from c3.utils.tf_utils import (
     tf_spost,
     commutator,
     anticommutator,
+    calculate_expectation_value,
 )
 from scipy import interpolate, integrate
 import tensorflow_probability as tfp
@@ -759,6 +760,93 @@ def ode_solver_final_state(
     return {"states": state_t, "ts": ts}
 
 
+@state_deco
+def scipy_integrate(
+    model: Model, gen: Generator, instr: Instruction, init_state, solver, step_function
+) -> Dict:
+
+    solvers = ["vode", "zvode", "lsoda", "dopri5", "dop853"]
+    if solver not in solvers:
+        raise Exception(f"solver not found. Available solvers are {solvers}")
+
+    signal = gen.generate_signals(instr)
+    h0, hctrls = model.get_Hamiltonians()
+
+    ts_list = []
+    signals = []
+    hks = []
+    for key in signal:
+        ts_list.append(signal[key]["ts"])
+        signals.append(signal[key]["values"])
+        hks.append(hctrls[key])
+
+    ts = tf.reduce_mean(ts_list, axis=0)
+    dt = ts[1] - ts[0]
+    nsteps = ts.shape[0]
+
+    signal_functions = []
+    for sig in signals:
+        signal_fun = interpolate.interp1d(ts, sig, fill_value="extrapolate")
+        signal_functions.append(signal_fun)
+
+    if model.lindbladian:
+        collapse = model.get_Lindbladians()
+    else:
+        collapse = None
+
+    states_list = []
+
+    def ham_func(t):
+        ham = h0
+        i = 0
+        for sig_fun in signal_functions:
+            ham += sig_fun(t) * hks[i]
+            i += 1
+        return ham
+
+    if model.lindbladian:
+
+        def ode_func(t, psi):
+            del_rho = -1j * commutator(ham_func(t), psi)
+            for col in collapse:
+                del_rho += tf.matmul(
+                    tf.matmul(col, psi), tf.transpose(col, conjugate=True)
+                )
+                del_rho -= 0.5 * anticommutator(
+                    tf.matmul(tf.transpose(col, conjugate=True), col), psi
+                )
+            return del_rho * dt
+
+    else:
+
+        def ode_func(t, psi):
+            return -1j * tf.linalg.matvec(ham_func(t), psi.T)
+
+    r = integrate.ode(ode_func)
+    r.set_integrator(solver, method="bdf", nsteps=nsteps)
+    r.set_initial_value(init_state, ts[0])
+
+    for i in range(nsteps):
+        states_list.append(r.integrate(r.t + dt))
+
+    states = tf.convert_to_tensor(states_list, dtype=tf.complex128)
+    ts = tf.cast(ts, dtype=tf.complex128)
+
+    return {"states": states, "ts": ts}
+
+
+def rk_using_butcher_tableau(func, rho, h, dt, tableau, col=None):
+    a, b, c = tableau
+    ks = []
+    for i in range(len(b)):
+        y_new = rho + tf.reduce_sum(tf.multiply(a[i], ks))
+        k_new = func(y_new, h[i], dt, col)
+        ks.append(k_new)
+    rho_new = rho + tf.reduce_sum(tf.multiply(b, ks), axis=0)
+    return rho_new
+
+
+
 @solver_deco
 def rk4(func, rho, h, dt, col=None):
     k1 = func(rho, h[0], dt, col)
@@ -1227,13 +1315,13 @@ def stochastic_schrodinger_rk4(
     dt = hs_of_t_ts["dt"]
 
     psi_list = propagate_stochastic_lind(
-        model, Hs, collapse_ops, init_state, ts, dt, plist, solver=solver
+        model, Hs, collapse_ops, init_state, ts, dt, plist, L_dag_L, solver=solver
     )
     return {"states": psi_list, "ts": ts}
 
 
 def propagate_stochastic_lind(
-    model, hs, collapse_ops, psi_init, ts, dt, plist, solver="rk4"
+    model, hs, collapse_ops, psi_init, ts, dt, plist, L_dag_L, solver="rk4"
 ):
 
     start = solver_slicing[solver][0]
@@ -1272,6 +1360,10 @@ def propagate_stochastic_lind(
         psi = stochastic_lind_traj(
             h, psi, dt, col_ops, coherent_ev_flag, col_flags, solver_function
         )
+
+        if coherent_ev_flag != 1:
+            plist = recompute_plist(model, ts.shape[0], dt, psi, L_dag_L)
+            tf.print("recomputing plist")
         psi_list = psi_list.write(index, psi)
 
     return psi_list.stack()
@@ -1299,7 +1391,7 @@ def stochastic_lind_traj(
 
     if coherent_ev_flag == 1:
         psi_new = solver_function(schrodinger, psi, h, dt, col=None)
-        #psi_new = tf.math.l2_normalize(psi_new)
+        psi_new = tf.math.l2_normalize(psi_new)
         return psi_new
 
     else:
@@ -1315,144 +1407,87 @@ def stochastic_lind_traj(
         psi_new = tf.math.l2_normalize(psi_new)
         return psi_new
 
+def recompute_plist(model, ts_len, dt, psi, L_dag_L):
+    N = len(model.subsystems.keys())
+    # pT1 = tf.TensorArray(
+    #                 tf.float64,
+    #                 size=N,
+    #                 dynamic_size=False, 
+    #                 infer_shape=False
+    # )
+    # pT2 = tf.TensorArray(
+    #                 tf.float64,
+    #                 size=N,
+    #                 dynamic_size=False, 
+    #                 infer_shape=False
+    # )
+    # pTemp = tf.TensorArray(
+    #                 tf.float64,
+    #                 size=N,
+    #                 dynamic_size=False, 
+    #                 infer_shape=False
+    # )
 
-@state_deco
-def scipy_integrate(
-    model: Model, gen: Generator, instr: Instruction, init_state, solver, step_function
-) -> Dict:
+    pT1 = []
+    pT2 = []
+    pTemp = []
 
-    solvers = ["vode", "zvode", "lsoda", "dopri5", "dop853"]
-    if solver not in solvers:
-        raise Exception(f"solver not found. Available solvers are {solvers}")
+    dt = tf.cast(dt, dtype=tf.float64)
+    counter = 0
+    for key, sub in model.subsystems.items():
+        try:
+            t1_val = sub.params["t1"].get_value()
+            #pT1.append(dt/t1_val)
+            #pT1 = pT1.write(counter, tf.abs(calculate_expectation_value(psi, L_dag_L[counter][0]))[0]*dt)
+            pT1.append(tf.abs(calculate_expectation_value(psi, L_dag_L[counter][0]))[0]*dt)
+        
+        except KeyError:
+            raise Exception(
+                f"Error: T1 for {key} is not defined."
+            )
+        try:
+            t2_val = sub.params["t2star"].get_value()
+            #pT2 = pT2.write(counter, tf.abs(calculate_expectation_value(psi, L_dag_L[counter][1]))[0]*dt)
+            pT2.append(tf.abs(calculate_expectation_value(psi, L_dag_L[counter][1]))[0]*dt)
+        
+        except KeyError:
+            raise Exception(
+                f"Error: T2Star for {key} is not defined."
+            )
 
-    signal = gen.generate_signals(instr)
-    h0, hctrls = model.get_Hamiltonians()
-
-    ts_list = []
-    signals = []
-    hks = []
-    for key in signal:
-        ts_list.append(signal[key]["ts"])
-        signals.append(signal[key]["values"])
-        hks.append(hctrls[key])
-
-    ts = tf.reduce_mean(ts_list, axis=0)
-    dt = ts[1] - ts[0]
-    nsteps = ts.shape[0]
-
-    signal_functions = []
-    for sig in signals:
-        signal_fun = interpolate.interp1d(ts, sig, fill_value="extrapolate")
-        signal_functions.append(signal_fun)
-
-    if model.lindbladian:
-        collapse = model.get_Lindbladians()
-    else:
-        collapse = None
-
-    states_list = []
-
-    def ham_func(t):
-        ham = h0
-        i = 0
-        for sig_fun in signal_functions:
-            ham += sig_fun(t) * hks[i]
-            i += 1
-        return ham
-
-    if model.lindbladian:
-
-        def ode_func(t, psi):
-            del_rho = -1j * commutator(ham_func(t), psi)
-            for col in collapse:
-                del_rho += tf.matmul(
-                    tf.matmul(col, psi), tf.transpose(col, conjugate=True)
-                )
-                del_rho -= 0.5 * anticommutator(
-                    tf.matmul(tf.transpose(col, conjugate=True), col), psi
-                )
-            return del_rho * dt
-
-    else:
-
-        def ode_func(t, psi):
-            return -1j * tf.linalg.matvec(ham_func(t), psi.T)
-
-    r = integrate.ode(ode_func)
-    r.set_integrator(solver, method="bdf", nsteps=nsteps)
-    r.set_initial_value(init_state, ts[0])
-
-    for i in range(nsteps):
-        states_list.append(r.integrate(r.t + dt))
-
-    states = tf.convert_to_tensor(states_list, dtype=tf.complex128)
-    ts = tf.cast(ts, dtype=tf.complex128)
-
-    return {"states": states, "ts": ts}
+        try:
+            temp_val = sub.params["temp"].get_value()
+            #pTemp = pTemp.write(counter, tf.abs(calculate_expectation_value(psi, L_dag_L[counter][2]))[0]*dt)
+            pTemp.append(tf.abs(calculate_expectation_value(psi, L_dag_L[counter][2]))[0]*dt)
+        
+        except KeyError:
+            raise Exception(
+                f"Error: Temp for {key} is not defined."
+            )
+        counter += 1
+    
+    # pT1 = pT1.stack()
+    # pT2 = pT2.stack()
+    # pTemp = pTemp.stack()
 
 
-def rk_using_butcher_tableau(func, rho, h, dt, tableau, col=None):
-    a, b, c = tableau
-    ks = []
-    for i in range(len(b)):
-        y_new = rho + tf.reduce_sum(tf.multiply(a[i], ks))
-        k_new = func(y_new, h[i], dt, col)
-        ks.append(k_new)
-    rho_new = rho + tf.reduce_sum(tf.multiply(b, ks), axis=0)
-    return rho_new
+    plists = []
+    g = tf.random.get_global_generator()
+    counter = 0
 
+    
+    for key in model.subsystems:
+        p_vals = []
+        temp1 = g.uniform(shape=[ts_len], dtype=tf.float64)
+        temp2 = g.uniform(shape=[ts_len], dtype=tf.float64)
+        tempt = g.uniform(shape=[ts_len], dtype=tf.float64)
 
-@state_deco
-def stiff_ode_solver(
-    model: Model, gen: Generator, instr: Instruction, init_state, solver, step_function
-) -> Dict:
+        p_vals.append(tf.math.floor((tf.math.sign(-temp1 + pT1[counter]) + 1)/2))
+        p_vals.append(tf.math.floor((tf.math.sign(-temp2 + pT2[counter]) + 1)/2))
+        p_vals.append(tf.math.floor((tf.math.sign(-tempt + pTemp[counter]) + 1)/2))
 
-    signal = gen.generate_signals(instr)
-    h0, hctrls = model.get_Hamiltonians()
-
-    ts_list = []
-    signals = []
-    hks = []
-    for key in signal:
-        ts_list.append(signal[key]["ts"])
-        signals.append(signal[key]["values"])
-        hks.append(hctrls[key])
-
-    ts = tf.reduce_mean(ts_list, axis=0)
-    dt = ts[1] - ts[0]
-
-    if model.lindbladian:
-        collapse = model.get_Lindbladians()
-    else:
-        collapse = None
-
-    def ham_func(t):
-        sigs = []
-        for sig in signals:
-            sigs.append(get_interpolated_signal_values(t, ts, sig))
-        sigs = tf.convert_to_tensor(sigs, dtype=tf.complex128)
-        ham = model.calculate_sum_Hs(h0, hks, sigs)
-        return ham
-
-    if model.lindbladian:
-
-        def ode_func(t, psi):
-            del_rho = -1j * commutator(ham_func(t), psi)
-            for col in collapse:
-                del_rho += tf.matmul(
-                    tf.matmul(col, psi), tf.transpose(col, conjugate=True)
-                )
-                del_rho -= 0.5 * anticommutator(
-                    tf.matmul(tf.transpose(col, conjugate=True), col), psi
-                )
-            return del_rho * dt
-
-    else:
-
-        def ode_func(t, psi):
-            return -1j * tf.linalg.matmul(ham_func(t), psi)
-
-    ts = tf.cast(ts, dtype=tf.float64)
-    results = tfp.math.ode.BDF().solve(ode_func, 0.0, init_state, solution_times=ts)
-
-    return {"states": results.states, "ts": ts}
+        #plists = plists.write(counter, p_vals)
+        plists.append(p_vals)
+        counter += 1
+    return tf.cast(plists, dtype=tf.complex128)
+    #return plists.stack()
