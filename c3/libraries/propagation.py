@@ -13,7 +13,7 @@ from c3.utils.tf_utils import (
     tf_spost,
     commutator,
     anticommutator,
-    calculate_expectation_value,
+    compute_dissipation_probs,
 )
 from scipy import interpolate, integrate
 
@@ -1424,6 +1424,8 @@ def propagate_stochastic_lind(
         tf.complex128, size=ts.shape[0], dynamic_size=False, infer_shape=False
     )
 
+    Nsubs = len(model.subsystems)
+
     for index in tf.range(ts.shape[0]):
         coherent_ev_flag = 1
         counter = 0
@@ -1452,7 +1454,7 @@ def propagate_stochastic_lind(
             h, psi, dt, col_ops, coherent_ev_flag, col_flags, solver_function
         )
         if tf.abs(coherent_ev_flag) == 0:
-            plist = recompute_plist(model, ts.shape[0], dt, psi, L_dag_L)
+            plist = compute_dissipation_probs(Nsubs, ts.shape[0], dt, psi, L_dag_L)
         psi_list = psi_list.write(index, psi)
 
     return psi_list.stack()
@@ -1495,29 +1497,3 @@ def stochastic_lind_traj(
 
         psi_new = tf.math.l2_normalize(psi_new)
         return psi_new
-
-
-def recompute_plist(model, ts_len, dt, psi, L_dag_L):
-    dt = tf.cast(dt, dtype=tf.float64)
-    plists = []
-    counter = 0
-    g = tf.random.get_global_generator()
-
-    for key in model.subsystems:
-        p_vals = []
-
-        temp1 = g.uniform(shape=[ts_len], dtype=tf.float64)
-        temp2 = g.uniform(shape=[ts_len], dtype=tf.float64)
-        tempt = g.uniform(shape=[ts_len], dtype=tf.float64)
-
-        pT1 = tf.abs(calculate_expectation_value(psi, L_dag_L[counter][0])) * dt
-        pT2 = tf.abs(calculate_expectation_value(psi, L_dag_L[counter][1])) * dt
-        pTemp = tf.abs(calculate_expectation_value(psi, L_dag_L[counter][2])) * dt
-
-        p_vals.append(tf.math.floor((tf.math.sign(-temp1 + pT1) + 1) / 2))
-        p_vals.append(tf.math.floor((tf.math.sign(-temp2 + pT2) + 1) / 2))
-        p_vals.append(tf.math.floor((tf.math.sign(-tempt + pTemp) + 1) / 2))
-
-        plists.append(p_vals)
-        counter += 1
-    return tf.cast(plists, dtype=tf.complex128)

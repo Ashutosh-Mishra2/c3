@@ -29,7 +29,7 @@ from c3.utils.tf_utils import (
     tf_vec_to_dm,
     _tf_matmul_n_even,
     _tf_matmul_n_odd,
-    calculate_expectation_value,
+    compute_dissipation_probs,
 )
 
 from c3.libraries.propagation import unitary_provider, state_provider
@@ -814,14 +814,15 @@ class Experiment:
             ts_len[gate] = int(instr.t_end * res)
 
         self.ts_len = ts_len
-        dt = 1 / res
+        dt = tf.cast(1 / res, dtype=tf.complex128)
 
+        Nsubs = len(model.subsystems)
         plist_list = []
         for i in range(Num_shots):
             counter = 0
             for gate in sequence:
-                plist = self.precompute_dissipation_probs(
-                    model, ts_len[gate], dt, init_state, L_dag_L
+                plist = compute_dissipation_probs(
+                    Nsubs, ts_len[gate], dt, init_state, L_dag_L
                 )
                 if counter == 0:
                     plist_list.append(plist)
@@ -919,29 +920,3 @@ class Experiment:
             ts_last += ts_len[gate]
             counter += 1
         return psi_list, ts_list
-
-    @tf.function
-    def precompute_dissipation_probs(self, model, ts_len, dt, psi, L_dag_L):
-        dt = tf.cast(dt, dtype=tf.float64)
-        g = tf.random.get_global_generator()
-        plists = []
-        counter = 0
-
-        for key in model.subsystems:
-            p_vals = []
-
-            temp1 = g.uniform(shape=[ts_len], dtype=tf.float64)
-            temp2 = g.uniform(shape=[ts_len], dtype=tf.float64)
-            tempt = g.uniform(shape=[ts_len], dtype=tf.float64)
-
-            pT1 = tf.abs(calculate_expectation_value(psi, L_dag_L[counter][0])) * dt
-            pT2 = tf.abs(calculate_expectation_value(psi, L_dag_L[counter][1])) * dt
-            pTemp = tf.abs(calculate_expectation_value(psi, L_dag_L[counter][2])) * dt
-
-            p_vals.append(tf.math.floor((tf.math.sign(-temp1 + pT1) + 1) / 2))
-            p_vals.append(tf.math.floor((tf.math.sign(-temp2 + pT2) + 1) / 2))
-            p_vals.append(tf.math.floor((tf.math.sign(-tempt + pTemp) + 1) / 2))
-
-            plists.append(p_vals)
-            counter += 1
-        return tf.cast(plists, dtype=tf.complex128)
