@@ -922,43 +922,26 @@ class Experiment:
 
     @tf.function
     def precompute_dissipation_probs(self, model, ts_len, dt, psi, L_dag_L):
-        pT1 = []
-        pT2 = []
-        pTemp = []
-
         dt = tf.cast(dt, dtype=tf.float64)
-        counter = 0
-        for key in model.subsystems:
-            pT1.append(
-                tf.abs(calculate_expectation_value(psi, L_dag_L[counter][0])) * dt
-            )
-            pT2.append(
-                tf.abs(calculate_expectation_value(psi, L_dag_L[counter][1])) * dt
-            )
-            pTemp.append(
-                tf.abs(calculate_expectation_value(psi, L_dag_L[counter][2])) * dt
-            )
-            counter += 1
-
-        plists = []
         g = tf.random.get_global_generator()
+        plists = []
         counter = 0
 
         for key in model.subsystems:
-            plists.append([])
+            p_vals = []
+
             temp1 = g.uniform(shape=[ts_len], dtype=tf.float64)
             temp2 = g.uniform(shape=[ts_len], dtype=tf.float64)
             tempt = g.uniform(shape=[ts_len], dtype=tf.float64)
 
-            plists[counter].append(
-                tf.math.floor((tf.math.sign(-temp1 + pT1[counter]) + 1) / 2)
-            )
-            plists[counter].append(
-                tf.math.floor((tf.math.sign(-temp2 + pT2[counter]) + 1) / 2)
-            )
-            plists[counter].append(
-                tf.math.floor((tf.math.sign(-tempt + pTemp[counter]) + 1) / 2)
-            )
+            pT1 = tf.abs(calculate_expectation_value(psi, L_dag_L[counter][0])) * dt
+            pT2 = tf.abs(calculate_expectation_value(psi, L_dag_L[counter][1])) * dt
+            pTemp = tf.abs(calculate_expectation_value(psi, L_dag_L[counter][2])) * dt
 
+            p_vals.append(tf.math.floor((tf.math.sign(-temp1 + pT1) + 1) / 2))
+            p_vals.append(tf.math.floor((tf.math.sign(-temp2 + pT2) + 1) / 2))
+            p_vals.append(tf.math.floor((tf.math.sign(-tempt + pTemp) + 1) / 2))
+
+            plists.append(p_vals)
             counter += 1
         return tf.cast(plists, dtype=tf.complex128)
