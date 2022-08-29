@@ -760,9 +760,6 @@ class Experiment:
         self.sequence = sequence
         self.init_state = init_state
         self.solver = solver
-
-        # TODO - Multiply factors of gamma to the collapse operators
-
         N_sub = len(model.subsystems)
 
         collapse_ops = tf.TensorArray(
@@ -853,7 +850,6 @@ class Experiment:
 
         if tf.reduce_any(tf.math.is_nan(tf.abs(psi_shots))):
             print("Some states are NaN.")
-        # TODO - Add Frame rotation and dephasing strength
         return {"states": psi_shots, "ts": ts_list}
 
     def batch_propagate_sde(

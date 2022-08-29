@@ -627,7 +627,7 @@ def compute_dissipation_probs(Nsubs, ts_len, dt, psi, L_dag_L):
     plists = []
     counter = 0
 
-    for i in range(Nsubs):
+    for _ in range(Nsubs):
         p_vals = []
 
         temp1 = g.uniform(shape=[ts_len], dtype=tf.float64)
@@ -644,4 +644,4 @@ def compute_dissipation_probs(Nsubs, ts_len, dt, psi, L_dag_L):
 
         plists.append(p_vals)
         counter += 1
-    return tf.cast(plists, dtype=tf.complex128)
+    return tf.convert_to_tensor(plists, dtype=tf.complex128)
