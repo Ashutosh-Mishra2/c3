@@ -555,13 +555,13 @@ def interpolate_signal(ts, sig, interpolate_res):
         ts_interp = tf.concat(
             [
                 ts,
-                ts + (1/200) * dt,
-                ts + (49/450) * dt,
-                ts + (49/300) * dt,
-                ts + (911/2000) * dt,
-                ts + (3480084980/5709648941) * dt,
-                ts + (221/250) * dt,
-                ts + (37/40) * dt,
+                ts + (1 / 200) * dt,
+                ts + (49 / 450) * dt,
+                ts + (49 / 300) * dt,
+                ts + (911 / 2000) * dt,
+                ts + (3480084980 / 5709648941) * dt,
+                ts + (221 / 250) * dt,
+                ts + (37 / 40) * dt,
                 ts + dt,
             ],
             axis=0,
@@ -573,16 +573,16 @@ def interpolate_signal(ts, sig, interpolate_res):
         ts_interp = tf.concat(
             [
                 ts,
-                ts + (1/20) * dt,
-                ts + (341/3200) * dt,
-                ts + (1023/6400) * dt,
-                ts + (39/100) * dt,
-                ts + (93/200) * dt,
-                ts + (31/200) * dt,
-                ts + (943/1000) * dt,
-                ts + (7067558016280/7837150160667) * dt,
-                ts + (909/1000) * dt,
-                ts + (47/50) * dt,
+                ts + (1 / 20) * dt,
+                ts + (341 / 3200) * dt,
+                ts + (1023 / 6400) * dt,
+                ts + (39 / 100) * dt,
+                ts + (93 / 200) * dt,
+                ts + (31 / 200) * dt,
+                ts + (943 / 1000) * dt,
+                ts + (7067558016280 / 7837150160667) * dt,
+                ts + (909 / 1000) * dt,
+                ts + (47 / 50) * dt,
                 ts + dt,
             ],
             axis=0,
@@ -613,11 +613,8 @@ def anticommutator(A, B):
 
 def calculate_expectation_value(psi, ops):
     if psi.shape[0] != psi.shape[1]:
-        expect = tf.matmul(
-            tf.transpose(psi, conjugate=True),
-            tf.matmul(ops, psi)
-        )
+        expect = tf.matmul(tf.transpose(psi, conjugate=True), tf.matmul(ops, psi))[0, 0]
     else:
         expect = tf.linalg.trace(tf.matmul(psi, ops))
-    
+
     return expect

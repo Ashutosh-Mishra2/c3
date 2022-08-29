@@ -29,13 +29,12 @@ from c3.utils.tf_utils import (
     tf_vec_to_dm,
     _tf_matmul_n_even,
     _tf_matmul_n_odd,
-    calculate_expectation_value
+    calculate_expectation_value,
 )
 
 from c3.libraries.propagation import unitary_provider, state_provider
 
 from c3.utils.qt_utils import perfect_single_q_parametric_gate
-from scipy.integrate import ode
 
 
 class Experiment:
@@ -633,7 +632,9 @@ class Experiment:
         trace = np.trace(np.matmul(rho, oper))
         return [[np.real(trace)]]  # ,[np.imag(trace)]]
 
-    def compute_states(self, solver="rk4", step_function="schrodinger", prop_method="ode_solver"):
+    def compute_states(
+        self, solver="rk4", step_function="schrodinger", prop_method="ode_solver"
+    ):
         """
         Use a state solver to compute the trajectory of the system.
 
@@ -727,13 +728,13 @@ class Experiment:
         return {"states": result["states"], "ts": ts[-1]}
 
     def solve_stochastic_ode(
-        self, 
-        init_state, 
-        sequence, 
-        Num_shots, 
-        enable_vec_map=False, 
+        self,
+        init_state,
+        sequence,
+        Num_shots,
+        enable_vec_map=False,
         batch_size=None,
-        solver="rk4"
+        solver="rk4",
     ):
         """
         Solve the Lindblad master equation by simulating the stochastic
@@ -761,14 +762,11 @@ class Experiment:
         self.solver = solver
 
         # TODO - Multiply factors of gamma to the collapse operators
-        
+
         N_sub = len(model.subsystems)
 
         collapse_ops = tf.TensorArray(
-                        tf.complex128,
-                        size=N_sub,
-                        dynamic_size=False, 
-                        infer_shape=False
+            tf.complex128, size=N_sub, dynamic_size=False, infer_shape=False
         )
         counter = 0
         for key in model.subsystems:
@@ -779,33 +777,31 @@ class Experiment:
         collapse_ops = collapse_ops.stack()
         self.collapse_ops = collapse_ops
 
-
         L_dag_L = []
         counter = 0
         for key in model.subsystems:
             cols = [
                 tf.matmul(
-                tf.transpose(collapse_ops[counter][0], conjugate=True),
-                collapse_ops[counter][0]
+                    tf.transpose(collapse_ops[counter][0], conjugate=True),
+                    collapse_ops[counter][0],
                 ),
                 tf.matmul(
-                tf.transpose(collapse_ops[counter][1], conjugate=True),
-                collapse_ops[counter][1]
+                    tf.transpose(collapse_ops[counter][1], conjugate=True),
+                    collapse_ops[counter][1],
                 ),
                 tf.matmul(
-                tf.transpose(collapse_ops[counter][2], conjugate=True),
-                collapse_ops[counter][2]
-                )
+                    tf.transpose(collapse_ops[counter][2], conjugate=True),
+                    collapse_ops[counter][2],
+                ),
             ]
             L_dag_L.append(cols)
             counter += 1
         self.L_dag_L = L_dag_L
 
-
-        #calculating pulse lengths
+        # calculating pulse lengths
         res = self.pmap.generator.devices["LO"].resolution
         instructions = self.pmap.instructions
-        ts_len ={}
+        ts_len = {}
         for gate in sequence:
             try:
                 instr = instructions[gate]
@@ -818,18 +814,14 @@ class Experiment:
             ts_len[gate] = int(instr.t_end * res)
 
         self.ts_len = ts_len
-        dt = 1/res
+        dt = 1 / res
 
         plist_list = []
         for i in range(Num_shots):
             counter = 0
             for gate in sequence:
                 plist = self.precompute_dissipation_probs(
-                                    model, 
-                                    ts_len[gate], 
-                                    dt, 
-                                    init_state, 
-                                    L_dag_L
+                    model, ts_len[gate], dt, init_state, L_dag_L
                 )
                 if counter == 0:
                     plist_list.append(plist)
@@ -849,8 +841,8 @@ class Experiment:
             psi_shots = tf.convert_to_tensor(psi_shots, dtype=tf.complex128)
             ts_list = tf.convert_to_tensor(ts_list, dtype=tf.complex128)
 
-        elif enable_vec_map and (batch_size != None):
-            Num_batches = int(tf.math.ceil(Num_shots/batch_size))
+        elif enable_vec_map and (batch_size is not None):
+            Num_batches = int(tf.math.ceil(Num_shots / batch_size))
             self.Num_batches = Num_batches
             self.batch_size = batch_size
             psi_shots, ts_list = self.batch_propagate_sde(plist_list)
@@ -862,10 +854,10 @@ class Experiment:
             print("Some states are NaN.")
         # TODO - Add Frame rotation and dephasing strength
         return {"states": psi_shots, "ts": ts_list}
-    
+
     def batch_propagate_sde(
-                self, 
-                plist_tensor: tf.TensorArray, 
+        self,
+        plist_tensor: tf.TensorArray,
     ):
         batch_array = tf.TensorArray(
             tf.complex128, size=self.Num_batches, dynamic_size=False, infer_shape=False
@@ -874,13 +866,12 @@ class Experiment:
         single_stochastic_run_tf = tf.function(self.single_stochastic_run)
         for i in tf.range(self.Num_batches):
             print(f"Tracing shot {i}")
-            x = plist_tensor[i*batch_size: i*batch_size + batch_size]
+            x = plist_tensor[i * batch_size : i * batch_size + batch_size]
             psi_shots, ts_list = tf.vectorized_map(single_stochastic_run_tf, x)
             batch_array = batch_array.write(i, psi_shots)
         batch_array = batch_array.concat()
 
         return batch_array, ts_list
-
 
     def single_stochastic_run(self, plist_seq):
         print("Tracing Single stochastic run")
@@ -912,16 +903,16 @@ class Experiment:
                     f" Available gates are:\n {list(instructions.keys())}."
                 )
             result = self.propagation(
-                            model=model, 
-                            gen=generator, 
-                            instr=instr, 
-                            collapse_ops=collapse_ops, 
-                            init_state=psi_init, 
-                            L_dag_L=L_dag_L, 
-                            plist=plist_seq[:,:,ts_last:ts_last + ts_len[gate]],
-                            solver=solver
+                model=model,
+                gen=generator,
+                instr=instr,
+                collapse_ops=collapse_ops,
+                init_state=psi_init,
+                L_dag_L=L_dag_L,
+                plist=plist_seq[:, :, ts_last : ts_last + ts_len[gate]],
+                solver=solver,
             )
-            psi_list = tf.concat([psi_list,  result["states"]], 0)
+            psi_list = tf.concat([psi_list, result["states"]], 0)
             ts_list = tf.concat([ts_list, tf.add(result["ts"], ts_init)], 0)
             psi_init = result["states"][-1]
             ts_init = result["ts"][-1]
@@ -931,54 +922,43 @@ class Experiment:
 
     @tf.function
     def precompute_dissipation_probs(self, model, ts_len, dt, psi, L_dag_L):
-        # TODO - correct the probability values
         pT1 = []
         pT2 = []
         pTemp = []
 
         dt = tf.cast(dt, dtype=tf.float64)
         counter = 0
-        for key, sub in model.subsystems.items():
-            try:
-                t1_val = sub.params["t1"].get_value()
-                #pT1.append(dt/t1_val)
-                pT1.append(tf.abs(calculate_expectation_value(psi, L_dag_L[counter][0]))[0]*dt)
-            except KeyError:
-                raise Exception(
-                    f"Error: T1 for {key} is not defined."
-                )
-            try:
-                t2_val = sub.params["t2star"].get_value()
-                pT2.append(tf.abs(calculate_expectation_value(psi, L_dag_L[counter][1]))[0]*dt)
-            except KeyError:
-                raise Exception(
-                    f"Error: T2Star for {key} is not defined."
-                )
-
-            try:
-                temp_val = sub.params["temp"].get_value()
-                pTemp.append(tf.abs(calculate_expectation_value(psi, L_dag_L[counter][2]))[0]*dt)
-            except KeyError:
-                raise Exception(
-                    f"Error: Temp for {key} is not defined."
-                )
+        for key in model.subsystems:
+            pT1.append(
+                tf.abs(calculate_expectation_value(psi, L_dag_L[counter][0])) * dt
+            )
+            pT2.append(
+                tf.abs(calculate_expectation_value(psi, L_dag_L[counter][1])) * dt
+            )
+            pTemp.append(
+                tf.abs(calculate_expectation_value(psi, L_dag_L[counter][2])) * dt
+            )
             counter += 1
 
         plists = []
         g = tf.random.get_global_generator()
         counter = 0
 
-        
         for key in model.subsystems:
             plists.append([])
             temp1 = g.uniform(shape=[ts_len], dtype=tf.float64)
             temp2 = g.uniform(shape=[ts_len], dtype=tf.float64)
             tempt = g.uniform(shape=[ts_len], dtype=tf.float64)
 
-            plists[counter].append(tf.math.floor((tf.math.sign(-temp1 + pT1[counter]) + 1)/2))
-            plists[counter].append(tf.math.floor((tf.math.sign(-temp2 + pT2[counter]) + 1)/2))
-            plists[counter].append(tf.math.floor((tf.math.sign(-tempt + pTemp[counter]) + 1)/2))
+            plists[counter].append(
+                tf.math.floor((tf.math.sign(-temp1 + pT1[counter]) + 1) / 2)
+            )
+            plists[counter].append(
+                tf.math.floor((tf.math.sign(-temp2 + pT2[counter]) + 1) / 2)
+            )
+            plists[counter].append(
+                tf.math.floor((tf.math.sign(-tempt + pTemp[counter]) + 1) / 2)
+            )
 
             counter += 1
         return tf.cast(plists, dtype=tf.complex128)
-
