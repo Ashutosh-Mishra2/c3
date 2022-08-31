@@ -730,8 +730,6 @@ class Experiment:
 
     def solve_stochastic_ode(
         self,
-        init_state,
-        sequence,
         Num_shots,
         enable_vec_map=False,
         batch_size=None,
@@ -758,6 +756,8 @@ class Experiment:
         model.controllability = self.use_control_fields
 
         self.set_prop_method("stochastic_schrodinger_rk4")
+        init_state = self.pmap.model.get_init_state()
+        sequence = self.opt_gates
 
         self.sequence = sequence
         self.init_state = init_state
