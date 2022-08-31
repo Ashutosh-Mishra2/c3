@@ -1405,14 +1405,16 @@ def stochastic_schrodinger_rk4(
     ts = hs_of_t_ts["ts"]
     dt = hs_of_t_ts["dt"]
 
+    t_len = ts.shape[0]
+
     psi_list = propagate_stochastic_lind(
-        model, Hs, collapse_ops, init_state, ts, dt, plist, L_dag_L, solver=solver
+        model, Hs, collapse_ops, init_state, t_len, dt, plist, L_dag_L, solver=solver
     )
     return {"states": psi_list, "ts": ts}
 
 
 def propagate_stochastic_lind(
-    model, hs, collapse_ops, psi_init, ts, dt, plist, L_dag_L, solver="rk4"
+    model, hs, collapse_ops, psi_init, t_len, dt, plist, L_dag_L, solver="rk4"
 ):
 
     start = solver_slicing[solver][0]
@@ -1421,22 +1423,22 @@ def propagate_stochastic_lind(
 
     psi = psi_init
     psi_list = tf.TensorArray(
-        tf.complex128, size=ts.shape[0], dynamic_size=False, infer_shape=False
+        tf.complex128, size=t_len, dynamic_size=False, infer_shape=False
     )
 
     Nsubs = len(model.subsystems)
     plist = tf.expand_dims(tf.expand_dims(plist, axis=3), axis=4)
 
-    for index in tf.range(ts.shape[0]):
+    for index in tf.range(t_len):
+        print(f"time step number {index}")
         col_flags = plist[:, :, index]
-        coherent_ev_flag = tf.reduce_prod(1 - col_flags)
+        coherent_ev_flag = tf.abs(tf.reduce_prod(1 - col_flags))
 
         h = tf.slice(hs, [start * index, 0, 0], [stop, hs.shape[1], hs.shape[2]])
-        psi = stochastic_lind_traj(
-            h, psi, dt, collapse_ops, coherent_ev_flag, col_flags, solver_function
-        )
-        if tf.abs(coherent_ev_flag) == 0:
-            plist = compute_dissipation_probs(Nsubs, ts.shape[0], dt, psi, L_dag_L)
+
+        psi = stochastic_lind_traj(h, psi, dt, collapse_ops, col_flags, solver_function)
+        if coherent_ev_flag == 0:
+            plist = compute_dissipation_probs(Nsubs, t_len, dt, psi, L_dag_L)
             plist = tf.expand_dims(tf.expand_dims(plist, axis=3), axis=4)
 
         psi_list = psi_list.write(index, psi)
@@ -1444,9 +1446,7 @@ def propagate_stochastic_lind(
     return psi_list.stack()
 
 
-def stochastic_lind_traj(
-    h, psi, dt, col_ops, coherent_ev_flag, col_flags, solver_function
-):
+def stochastic_lind_traj(h, psi, dt, col_ops, col_flags, solver_function):
     """
     Calculates the single time step lindbladian evoultion
     of a state vector.
@@ -1459,8 +1459,10 @@ def stochastic_lind_traj(
     relax_op: relaxion operator
     dec_op: decoherence operator
     """
+    coherent_ev_flag = tf.abs(tf.reduce_prod(1 - col_flags))
 
     if coherent_ev_flag == 1:
+        print("coherent evolution")
         psi_new = solver_function(schrodinger, psi, h, dt, col=None)
         psi_new = tf.math.l2_normalize(psi_new)
         return psi_new

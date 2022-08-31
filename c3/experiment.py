@@ -35,6 +35,7 @@ from c3.utils.tf_utils import (
 from c3.libraries.propagation import unitary_provider, state_provider
 
 from c3.utils.qt_utils import perfect_single_q_parametric_gate
+from multiprocessing.pool import ThreadPool as Pool
 
 
 class Experiment:
@@ -735,6 +736,7 @@ class Experiment:
         enable_vec_map=False,
         batch_size=None,
         solver="rk4",
+        num_threads=None,
     ):
         """
         Solve the Lindblad master equation by simulating the stochastic
@@ -831,13 +833,21 @@ class Experiment:
 
         single_stochastic_run_tf = tf.function(self.single_stochastic_run)
         if not enable_vec_map:
-            psi_shots = []
-            for num in range(Num_shots):
-                print(f"Running shot {num}")
-                psi_list, ts_list = single_stochastic_run_tf(plist_list[num])
-                psi_shots.append(psi_list)
-            psi_shots = tf.convert_to_tensor(psi_shots, dtype=tf.complex128)
-            ts_list = tf.convert_to_tensor(ts_list, dtype=tf.complex128)
+            if num_threads is not None:
+                self.results = []
+                self.sde_multi_thread(plist_list, num_threads)
+                psi_shots = [i[0] for i in self.results[0]]
+                ts_list = [i[1] for i in self.results[0]]
+                psi_shots = tf.convert_to_tensor(psi_shots, dtype=tf.complex128)
+                ts_list = tf.convert_to_tensor(ts_list, dtype=tf.complex128)
+            else:
+                psi_shots = []
+                for num in range(Num_shots):
+                    print(f"Running shot {num}")
+                    psi_list, ts_list = single_stochastic_run_tf(plist_list[num])
+                    psi_shots.append(psi_list)
+                psi_shots = tf.convert_to_tensor(psi_shots, dtype=tf.complex128)
+                ts_list = tf.convert_to_tensor(ts_list, dtype=tf.complex128)
 
         elif enable_vec_map and (batch_size is not None):
             Num_batches = int(tf.math.ceil(Num_shots / batch_size))
@@ -851,24 +861,6 @@ class Experiment:
         if tf.reduce_any(tf.math.is_nan(tf.abs(psi_shots))):
             print("Some states are NaN.")
         return {"states": psi_shots, "ts": ts_list}
-
-    def batch_propagate_sde(
-        self,
-        plist_tensor: tf.TensorArray,
-    ):
-        batch_array = tf.TensorArray(
-            tf.complex128, size=self.Num_batches, dynamic_size=False, infer_shape=False
-        )
-        batch_size = self.batch_size
-        single_stochastic_run_tf = tf.function(self.single_stochastic_run)
-        for i in tf.range(self.Num_batches):
-            print(f"Tracing shot {i}")
-            x = plist_tensor[i * batch_size : i * batch_size + batch_size]
-            psi_shots, ts_list = tf.vectorized_map(single_stochastic_run_tf, x)
-            batch_array = batch_array.write(i, psi_shots)
-        batch_array = batch_array.concat()
-
-        return batch_array, ts_list
 
     def single_stochastic_run(self, plist_seq):
         print("Tracing Single stochastic run")
@@ -916,3 +908,28 @@ class Experiment:
             ts_last += ts_len[gate]
             counter += 1
         return psi_list, ts_list
+
+    def batch_propagate_sde(
+        self,
+        plist_tensor: tf.TensorArray,
+    ):
+        batch_array = tf.TensorArray(
+            tf.complex128, size=self.Num_batches, dynamic_size=False, infer_shape=False
+        )
+        batch_size = self.batch_size
+        single_stochastic_run_tf = tf.function(self.single_stochastic_run)
+        for i in tf.range(self.Num_batches):
+            print(f"Tracing shot {i}")
+            x = plist_tensor[i * batch_size : i * batch_size + batch_size]
+            psi_shots, ts_list = tf.vectorized_map(single_stochastic_run_tf, x)
+            batch_array = batch_array.write(i, psi_shots)
+        batch_array = batch_array.concat()
+
+        return batch_array, ts_list
+
+    def sde_multi_thread(self, plist, num_threads):
+        single_stochastic_run_tf = tf.function(self.single_stochastic_run)
+        pool = Pool(processes=num_threads)
+        result = pool.map(single_stochastic_run_tf, tf.unstack(plist))
+        self.results.append(result)
+        return result
