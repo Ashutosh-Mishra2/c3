@@ -621,27 +621,16 @@ def calculate_expectation_value(psi, ops):
 
 
 @tf.function
-def compute_dissipation_probs(Nsubs, ts_len, dt, psi, L_dag_L):
+def compute_dissipation_probs(Nsubs, dt, psi, L_dag_L):
     dt = tf.cast(dt, dtype=tf.float64)
-    g = tf.random.get_global_generator()
-    plists = []
-    counter = 0
+    psi = tf.expand_dims(tf.expand_dims(psi, axis=0), axis=1)
 
-    for _ in range(Nsubs):
-        p_vals = []
+    probs = tf.random.uniform(shape=[Nsubs, 3], dtype=tf.float64)
 
-        temp1 = g.uniform(shape=[ts_len], dtype=tf.float64)
-        temp2 = g.uniform(shape=[ts_len], dtype=tf.float64)
-        tempt = g.uniform(shape=[ts_len], dtype=tf.float64)
+    ps = tf.matmul(
+        tf.transpose(psi, conjugate=True, perm=[0, 1, 3, 2]), tf.matmul(L_dag_L, psi)
+    )
+    ps = tf.abs(tf.reshape(ps, [Nsubs, 3])) * dt
+    plist = tf.math.floor((tf.math.sign(-probs + ps) + 1) / 2)
 
-        pT1 = tf.abs(calculate_expectation_value(psi, L_dag_L[counter][0])) * dt
-        pT2 = tf.abs(calculate_expectation_value(psi, L_dag_L[counter][1])) * dt
-        pTemp = tf.abs(calculate_expectation_value(psi, L_dag_L[counter][2])) * dt
-
-        p_vals.append(tf.math.floor((tf.math.sign(-temp1 + pT1) + 1) / 2))
-        p_vals.append(tf.math.floor((tf.math.sign(-temp2 + pT2) + 1) / 2))
-        p_vals.append(tf.math.floor((tf.math.sign(-tempt + pTemp) + 1) / 2))
-
-        plists.append(p_vals)
-        counter += 1
-    return tf.convert_to_tensor(plists, dtype=tf.complex128)
+    return tf.cast(plist, dtype=tf.complex128)

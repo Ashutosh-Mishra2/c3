@@ -795,43 +795,22 @@ class Experiment:
             ]
             L_dag_L.append(cols)
             counter += 1
+        L_dag_L = tf.convert_to_tensor(L_dag_L, dtype=tf.complex128)
         self.L_dag_L = L_dag_L
 
-        # calculating pulse lengths
         res = self.pmap.generator.devices["LO"].resolution
-        instructions = self.pmap.instructions
-        ts_len = {}
-        for gate in sequence:
-            try:
-                instr = instructions[gate]
-            except KeyError:
-                raise Exception(
-                    f"C3:Error: Gate '{gate}' is not defined."
-                    f" Available gates are:\n {list(instructions.keys())}."
-                )
-
-            ts_len[gate] = int(instr.t_end * res)
-
-        self.ts_len = ts_len
         dt = tf.cast(1 / res, dtype=tf.complex128)
 
         Nsubs = len(model.subsystems)
         plist_list = []
         for i in range(Num_shots):
-            counter = 0
-            for gate in sequence:
-                plist = compute_dissipation_probs(
-                    Nsubs, ts_len[gate], dt, init_state, L_dag_L
-                )
-                if counter == 0:
-                    plist_list.append(plist)
-                else:
-                    plist_list[-1] = tf.concat([plist_list[-1], plist], 2)
-                counter += 1
+            plist = compute_dissipation_probs(Nsubs, dt, init_state, L_dag_L)
+            plist_list.append(plist)
 
         plist_list = tf.convert_to_tensor(plist_list, dtype=tf.complex128)
 
         single_stochastic_run_tf = tf.function(self.single_stochastic_run)
+        # single_stochastic_run_tf = self.single_stochastic_run
         if not enable_vec_map:
             if num_threads is not None:
                 self.results = []
@@ -871,7 +850,6 @@ class Experiment:
         generator = self.pmap.generator
         collapse_ops = self.collapse_ops
         L_dag_L = self.L_dag_L
-        ts_len = self.ts_len
         solver = self.solver
 
         psi_init = init_state
@@ -881,7 +859,6 @@ class Experiment:
         ts_list = [ts_init]
 
         counter = 0
-        ts_last = 0
 
         for gate in sequence:
             try:
@@ -898,14 +875,13 @@ class Experiment:
                 collapse_ops=collapse_ops,
                 init_state=psi_init,
                 L_dag_L=L_dag_L,
-                plist=plist_seq[:, :, ts_last : ts_last + ts_len[gate]],
+                plist=plist_seq,
                 solver=solver,
             )
             psi_list = tf.concat([psi_list, result["states"]], 0)
             ts_list = tf.concat([ts_list, tf.add(result["ts"], ts_init)], 0)
             psi_init = result["states"][-1]
             ts_init = result["ts"][-1]
-            ts_last += ts_len[gate]
             counter += 1
         return psi_list, ts_list
 

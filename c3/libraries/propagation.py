@@ -1427,26 +1427,22 @@ def propagate_stochastic_lind(
     )
 
     Nsubs = len(model.subsystems)
-    plist = tf.expand_dims(tf.expand_dims(plist, axis=3), axis=4)
+    plist = tf.expand_dims(tf.expand_dims(plist, axis=2), axis=3)
 
     for index in tf.range(t_len):
         print(f"time step number {index}")
-        col_flags = plist[:, :, index]
-        coherent_ev_flag = tf.abs(tf.reduce_prod(1 - col_flags))
-
         h = tf.slice(hs, [start * index, 0, 0], [stop, hs.shape[1], hs.shape[2]])
 
-        psi = stochastic_lind_traj(h, psi, dt, collapse_ops, col_flags, solver_function)
-        if coherent_ev_flag == 0:
-            plist = compute_dissipation_probs(Nsubs, t_len, dt, psi, L_dag_L)
-            plist = tf.expand_dims(tf.expand_dims(plist, axis=3), axis=4)
-
+        psi = stochastic_lind_traj(h, psi, dt, collapse_ops, plist, solver_function)
+        psi = tf.math.l2_normalize(psi)
+        plist = compute_dissipation_probs(Nsubs, dt, psi, L_dag_L)
+        plist = tf.expand_dims(tf.expand_dims(plist, axis=2), axis=3)
         psi_list = psi_list.write(index, psi)
 
     return psi_list.stack()
 
 
-def stochastic_lind_traj(h, psi, dt, col_ops, col_flags, solver_function):
+def stochastic_lind_traj(h, psi, dt, col_ops, plist, solver_function):
     """
     Calculates the single time step lindbladian evoultion
     of a state vector.
@@ -1459,19 +1455,15 @@ def stochastic_lind_traj(h, psi, dt, col_ops, col_flags, solver_function):
     relax_op: relaxion operator
     dec_op: decoherence operator
     """
-    coherent_ev_flag = tf.abs(tf.reduce_prod(1 - col_flags))
+    coherent_ev_flag = tf.abs(tf.reduce_prod(1 - plist))
 
     if coherent_ev_flag == 1:
         print("coherent evolution")
         psi_new = solver_function(schrodinger, psi, h, dt, col=None)
-        psi_new = tf.math.l2_normalize(psi_new)
         return psi_new
 
     else:
         print("Collapse")
-        col = tf.reduce_sum(
-            tf.reduce_sum(tf.multiply(col_flags, col_ops), axis=1), axis=0
-        )
+        col = tf.reduce_sum(tf.reduce_sum(tf.multiply(plist, col_ops), axis=1), axis=0)
         psi_new = tf.matmul(col, psi)
-        psi_new = tf.math.l2_normalize(psi_new)
         return psi_new
