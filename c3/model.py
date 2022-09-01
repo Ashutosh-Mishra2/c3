@@ -76,7 +76,10 @@ class Model:
     def get_ground_state(self) -> tf.constant:
         gs = [[0] * self.tot_dim]
         gs[0][0] = 1
-        return tf.transpose(tf.constant(gs, dtype=tf.complex128))
+        ground_state = tf.transpose(tf.constant(gs, dtype=tf.complex128))
+        if self.lindbladian:
+            ground_state = tf_utils.tf_state_to_dm(ground_state)
+        return ground_state
 
     def get_init_state(self) -> tf.Tensor:
         """Get an initial state. If a task to compute a thermal state is set, return that."""
@@ -695,7 +698,9 @@ class Model:
         hk = tf.multiply(control_field, hks)
         Hs = tf.reduce_sum(hk, axis=1)
         if L_dag_L is not None:
-            return Hs + h0 - 0.5j * tf.reduce_sum(tf.reduce_sum(L_dag_L, axis=0), axis=0)
+            return (
+                Hs + h0 - 0.5j * tf.reduce_sum(tf.reduce_sum(L_dag_L, axis=0), axis=0)
+            )
         return Hs + h0
 
 

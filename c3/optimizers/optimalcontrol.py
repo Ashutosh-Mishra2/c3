@@ -60,6 +60,7 @@ class OptimalControl(Optimizer):
         ode_solver=None,
         ode_step_function="schrodinger",
         only_final_state=False,
+        readout=False,
     ) -> None:
         if type(algorithm) is str:
             algorithm = algorithms[algorithm]
@@ -81,6 +82,7 @@ class OptimalControl(Optimizer):
         self.interactive = interactive
         self.update_model = include_model
         self.fid_func_kwargs = fid_func_kwargs
+        self.readout = readout
         self.run = (
             self.optimize_controls
         )  # Alias the legacy name for the method running the
@@ -104,6 +106,8 @@ class OptimalControl(Optimizer):
         if self.ode_solver is not None:
             if self.only_final_state:
                 self.goal_function = self.goal_run_ode_only_final
+            elif self.readout:
+                self.goal_function = self.goal_run_readout
             else:
                 self.goal_function = self.goal_run_ode
         else:
@@ -169,6 +173,9 @@ class OptimalControl(Optimizer):
             index.append(self.pmap.model.names.index(name))
         self.index = index
         x_init = self.pmap.get_parameters_scaled()
+        if self.readout:
+            self.ground_state = self.pmap.model.get_ground_state()
+            self.init_state = self.pmap.model.get_init_state()
         try:
             self.algorithm(
                 x_init,
@@ -268,6 +275,47 @@ class OptimalControl(Optimizer):
 
         goal = self.fid_func(
             states=state,
+            index=self.index,
+            dims=dims,
+            n_eval=self.evaluation + 1,
+            **self.fid_func_kwargs,
+        )
+        self.evaluation += 1
+        return goal
+
+    @tf.function
+    def goal_run_readout(self, current_params: tf.Tensor) -> tf.float64:
+        """
+        Evaluate the goal function using ode solver for optimizing readout.
+
+        Parameters
+        ----------
+        current_params : tf.Tensor
+            Vector representing the current parameter values.
+
+        Returns
+        -------
+        tf.float64
+            Value of the goal function
+        """
+        self.pmap.set_parameters_scaled(current_params)
+        dims = self.pmap.model.dims
+        model = self.pmap.model
+        model.set_init_state(self.init_state)
+        result_e = self.exp.compute_states(
+            solver=self.ode_solver, step_function=self.ode_step_function
+        )
+        states_e = result_e["states"]
+
+        model.set_init_state(self.ground_state)
+        result_g = self.exp.compute_states(
+            solver=self.ode_solver, step_function=self.ode_step_function
+        )
+        states_g = result_g["states"]
+
+        states = [states_e, states_g]
+        goal = self.fid_func(
+            states=states,
             index=self.index,
             dims=dims,
             n_eval=self.evaluation + 1,

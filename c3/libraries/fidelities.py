@@ -856,22 +856,25 @@ def state_transfer_infid_set_full(
 
     if lindbladian:
         swap_propagator = tf.eye(tf.square(tf.reduce_prod(dims)), dtype=tf.complex128)
-        swap_propagator_ideal = tf.eye(tf.square(tf.reduce_prod(dims)), dtype=tf.complex128)
+        swap_propagator_ideal = tf.eye(
+            tf.square(tf.reduce_prod(dims)), dtype=tf.complex128
+        )
     else:
         swap_propagator = tf.eye(tf.reduce_prod(dims), dtype=tf.complex128)
         swap_propagator_ideal = tf.eye(tf.reduce_prod(dims), dtype=tf.complex128)
 
-
     for gate, propagator in propagators.items():
         print(gate)
         swap_propagator = tf.matmul(propagator, swap_propagator)
-        perfect_gate = instructions[gate].get_ideal_gate(dims, full_hilbert_space=True)        
+        perfect_gate = instructions[gate].get_ideal_gate(dims, full_hilbert_space=True)
         if lindbladian:
             perfect_gate = tf_super(perfect_gate)
             psi0 = tf_dm_to_vec(psi0)
         swap_propagator_ideal = tf.matmul(perfect_gate, swap_propagator_ideal)
-        
-    infid = state_transfer_infid_full(swap_propagator_ideal, swap_propagator, index, dims, psi0, lindbladian)
+
+    infid = state_transfer_infid_full(
+        swap_propagator_ideal, swap_propagator, index, dims, psi0, lindbladian
+    )
     return infid
 
 
@@ -905,7 +908,7 @@ def state_transfer_infid_full(
         psi_actual = tf_vec_to_dm(psi_actual)
         psi_ideal = tf_vec_to_dm(psi_ideal)
         overlap = tf.linalg.trace(tf.matmul(psi_ideal, psi_actual))
-    else: 
+    else:
         overlap = tf_ketket_fid(psi_ideal, psi_actual)
     infid = 1 - overlap
     return tf.abs(infid)
@@ -929,11 +932,12 @@ def swap_and_readout(
     infid = tf.convert_to_tensor(0.0, dtype=tf.complex128)
     if lindbladian:
         swap_propagator = tf.eye(tf.square(tf.reduce_prod(dims)), dtype=tf.complex128)
-        swap_propagator_ideal = tf.eye(tf.square(tf.reduce_prod(dims)), dtype=tf.complex128)
+        swap_propagator_ideal = tf.eye(
+            tf.square(tf.reduce_prod(dims)), dtype=tf.complex128
+        )
     else:
         swap_propagator = tf.eye(tf.reduce_prod(dims), dtype=tf.complex128)
         swap_propagator_ideal = tf.eye(tf.reduce_prod(dims), dtype=tf.complex128)
-
 
     if lindbladian:
         psi_g = tf_dm_to_vec(psi_g)
@@ -967,13 +971,14 @@ def swap_and_readout(
         if "swap" in gate:
             swap_propagator = tf.matmul(propagator, swap_propagator)
             if lindbladian:
-                ideal_gate = tf_super(instructions[gate].get_ideal_gate(
-                    dims, full_hilbert_space=True))
+                ideal_gate = tf_super(
+                    instructions[gate].get_ideal_gate(dims, full_hilbert_space=True)
+                )
             else:
                 ideal_gate = instructions[gate].get_ideal_gate(
-                    dims, full_hilbert_space=True)
+                    dims, full_hilbert_space=True
+                )
             swap_propagator_ideal = tf.matmul(ideal_gate, swap_propagator_ideal)
-
 
     # swap infideltiy
     if lindbladian:
@@ -1025,20 +1030,12 @@ def calculate_state_overlap(psi1, psi2):
 
 
 @fid_reg_deco
-def readout_ode(
-    states_e: List[tf.Tensor],
-    states_g: List[tf.Tensor],
-    index,
-    dims,
-    params,
-    ground_state,
-    n_eval=-1 
-):
+def readout_ode(states: tf.Tensor, index, dims, params, n_eval=-1):
     a_rotated = params["a_rotated"]
     d_max = params["cutoff_distance"]
     lindbladian = params["lindbladian"]
-    psi_g = states_g[-1]
-    psi_e = states_e[-1]
+    psi_g = states[0][-1]
+    psi_e = states[1][-1]
     infids = []
 
     if lindbladian:
@@ -1051,7 +1048,7 @@ def readout_ode(
         alpha1 = tf.matmul(
             tf.matmul(tf.transpose(psi_e, conjugate=True), a_rotated), psi_e
         )[0, 0]
-    
+
     distance = tf.abs(alpha0 - alpha1)
     iq_infid = tf.exp(-distance / d_max)
     iq_infid = tf.cast(iq_infid, dtype=tf.complex128)
@@ -1067,7 +1064,7 @@ def swap_and_readout_ode(
     dims,
     params,
     ground_state,
-    n_eval=-1 
+    n_eval=-1,
 ):
     print("Calculating fidelity")
     infids = []
@@ -1078,7 +1075,6 @@ def swap_and_readout_ode(
     swap_cost = params["swap_cost"]
     swap_target_e = params["swap_target_state_excited"]
     swap_target_g = params["swap_target_state_ground"]
-
 
     swap_cost = tf.constant(swap_cost, dtype=tf.complex128)
     infid = tf.convert_to_tensor(0.0, dtype=tf.complex128)
@@ -1095,7 +1091,7 @@ def swap_and_readout_ode(
         alpha1 = tf.matmul(
             tf.matmul(tf.transpose(psi_e, conjugate=True), a_rotated), psi_e
         )[0, 0]
-    
+
     distance = tf.abs(alpha0 - alpha1)
     iq_infid = tf.exp(-distance / d_max)
     iq_infid = tf.cast(iq_infid, dtype=tf.complex128)
@@ -1105,12 +1101,10 @@ def swap_and_readout_ode(
 
     overlap_e = calculate_state_overlap(states_e[swap_position], swap_target_e)
     overlap_g = calculate_state_overlap(states_g[swap_position], swap_target_g)
-    swap_infid = 1 - (overlap_e + overlap_g)/2
+    swap_infid = 1 - (overlap_e + overlap_g) / 2
     swap_infid = tf.cast(swap_infid, dtype=tf.complex128)
     infid += swap_infid
 
     infids.append(infid)
 
     return tf.abs(tf.reduce_mean(infids))
-
-
