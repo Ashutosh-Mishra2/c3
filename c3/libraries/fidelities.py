@@ -1036,7 +1036,6 @@ def readout_ode(states: tf.Tensor, index, dims, params, n_eval=-1):
     lindbladian = params["lindbladian"]
     psi_g = states[0][-1]
     psi_e = states[1][-1]
-    infids = []
 
     if lindbladian:
         alpha0 = tf.linalg.trace(tf.matmul(psi_g, a_rotated))
@@ -1051,9 +1050,7 @@ def readout_ode(states: tf.Tensor, index, dims, params, n_eval=-1):
 
     distance = tf.abs(alpha0 - alpha1)
     iq_infid = tf.exp(-distance / d_max)
-    iq_infid = tf.cast(iq_infid, dtype=tf.complex128)
-    infids.append(iq_infid)
-    return tf.abs(tf.reduce_mean(infids))
+    return tf.abs(iq_infid)
 
 
 @fid_reg_deco
