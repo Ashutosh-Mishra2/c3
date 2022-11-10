@@ -1078,3 +1078,36 @@ def swap_and_readout_ode(states: tf.Tensor, index, dims, params, n_eval=-1):
     infid = swap_infid + iq_infid
 
     return tf.abs(infid)
+
+
+@fid_reg_deco
+def swap_and_readout_prod(states: tf.Tensor, index, dims, params, n_eval=-1):
+    print("Calculating fidelity")
+    a_rotated = params["a_rotated"]
+    d_max = params["cutoff_distance"]
+    lindbladian = params["lindbladian"]
+
+    swap_position = params["swap_pos"]  # -1 for final state
+    swap_cost = params["swap_cost"]
+    swap_target_e = params["swap_target_state_excited"]
+    swap_target_g = params["swap_target_state_ground"]
+
+    swap_cost = tf.constant(swap_cost, dtype=tf.complex128)
+    infid = tf.convert_to_tensor(0.0, dtype=tf.complex128)
+
+    psi_g = states[0][-1]
+    psi_e = states[1][-1]
+
+    alpha0 = calculate_expect_value(psi_g, a_rotated, lindbladian)
+    alpha1 = calculate_expect_value(psi_e, a_rotated, lindbladian)
+
+    distance = tf.abs(alpha0 - alpha1)
+    iq_fid = tf.exp(-distance / d_max)
+
+    overlap_g = calculate_state_overlap(states[0][swap_position], swap_target_g)
+    overlap_e = calculate_state_overlap(states[1][swap_position], swap_target_e)
+
+    swap_fid = (overlap_e + overlap_g) / 2
+    infid = 1 - (swap_fid * iq_fid)
+
+    return tf.abs(infid)
