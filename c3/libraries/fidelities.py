@@ -1102,7 +1102,7 @@ def swap_and_readout_prod(states: tf.Tensor, index, dims, params, n_eval=-1):
     alpha1 = calculate_expect_value(psi_e, a_rotated, lindbladian)
 
     distance = tf.abs(alpha0 - alpha1)
-    iq_fid = tf.exp(-distance / d_max)
+    iq_fid = tf.exp(distance / d_max)
 
     overlap_g = calculate_state_overlap(states[0][swap_position], swap_target_g)
     overlap_e = calculate_state_overlap(states[1][swap_position], swap_target_e)
