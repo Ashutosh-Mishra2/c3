@@ -1102,12 +1102,68 @@ def swap_and_readout_prod(states: tf.Tensor, index, dims, params, n_eval=-1):
     alpha1 = calculate_expect_value(psi_e, a_rotated, lindbladian)
 
     distance = tf.abs(alpha0 - alpha1)
-    iq_fid = tf.exp(distance / d_max)
+    iq_fid = 1 - tf.exp(-distance / d_max)
 
     overlap_g = calculate_state_overlap(states[0][swap_position], swap_target_g)
     overlap_e = calculate_state_overlap(states[1][swap_position], swap_target_e)
 
     swap_fid = (overlap_e + overlap_g) / 2
+    infid = 1 - (swap_fid * iq_fid)
+
+    return tf.abs(infid)
+
+
+def partial_trace_two_systems(rho, dims, trace_sys):
+    if trace_sys == 0:
+        rho_ptrace = tf.experimental.numpy.trace(
+            tf.reshape(rho, (dims[0], dims[1], dims[0], dims[1])), axis1=0, axis2=2
+        )
+    else:
+        rho_ptrace = tf.experimental.numpy.trace(
+            tf.reshape(rho, (dims[0], dims[1], dims[0], dims[1])), axis1=1, axis2=3
+        )
+    return rho_ptrace
+
+
+@fid_reg_deco
+def readoutswap_trace_prod(states: tf.Tensor, index, dims, params, n_eval=-1):
+    print("Calculating fidelity")
+    a_rotated = params["a_rotated"]
+    d_max = params["cutoff_distance"]
+    lindbladian = params["lindbladian"]
+
+    swap_position = params["swap_pos"]  # -1 for final state
+    swap_cost = params["swap_cost"]
+    # swap_target_e = params["swap_target_state_excited"]
+    # swap_target_g = params["swap_target_state_ground"]
+
+    swap_cost = tf.constant(swap_cost, dtype=tf.complex128)
+    infid = tf.convert_to_tensor(0.0, dtype=tf.complex128)
+
+    psi_g = states[0][-1]
+    psi_e = states[1][-1]
+
+    alpha0 = calculate_expect_value(psi_g, a_rotated, lindbladian)
+    alpha1 = calculate_expect_value(psi_e, a_rotated, lindbladian)
+
+    distance = tf.abs(alpha0 - alpha1)
+    iq_fid = 1 - tf.exp(-distance / d_max)
+
+    ground_pop_g = partial_trace_two_systems(
+        states[0][swap_position],
+        tf.constant(dims, dtype=tf.int32),
+        tf.constant(1, dtype=tf.int32),
+    )
+    ground_pop_e = partial_trace_two_systems(
+        states[1][swap_position],
+        tf.constant(dims, dtype=tf.int32),
+        tf.constant(1, dtype=tf.int32),
+    )
+
+    ground_pop_g = tf.abs(ground_pop_g)
+    ground_pop_e = tf.abs(ground_pop_e)
+
+    swap_fid = (ground_pop_g + ground_pop_e) / 2
     infid = 1 - (swap_fid * iq_fid)
 
     return tf.abs(infid)
