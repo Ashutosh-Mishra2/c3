@@ -13,6 +13,7 @@ from scipy.optimize import fmin
 import tensorflow_probability as tfp
 from typing import List, Dict, Union
 
+
 device_lib = dict()
 
 
@@ -1289,3 +1290,167 @@ class Coupling_Drive(Drive):
 
     def init_Hs(self, ann_opers: list):
         self.h = tf.constant(self.hamiltonian_func(ann_opers), dtype=tf.complex128)
+
+
+@dev_reg_deco
+class JPM(PhysicalComponent):
+    """
+    Represents a Josephson Photo-Multiplier.
+
+    Parameters
+    ----------
+    freq: Quantity
+        frequency of the JPM
+    Em: Quantity
+        Energy of measured state
+    gamma0: Quantity
+        Tunneling rate of the ground state to measured state
+    gamma1: Quantity
+        Tunneling rate of the excited state to measured state
+    t1: Quantity
+        Relaxation time of JPM
+    t2star: Quantity
+        Dephasing time of JPM
+    """
+
+    def __init__(
+        self,
+        freq,
+        Em,
+        gamma0=None,
+        gamma1=None,
+        t1=None,
+        t2star=None,
+        temp=None,
+    ):
+        self.param["freq"] = freq
+        self.params["Em"] = Em
+        if gamma0:
+            self.params["gamma0"] = gamma0
+        if gamma1:
+            self.params["gamma1"] = gamma1
+        if t1:
+            self.params["t1"] = t1
+        if t2star:
+            self.params["t2star"] = t2star
+        if temp:
+            self.params["temp"] = temp
+
+    def get_freq(self, freq):
+        self.params["freq"] = freq
+        return freq
+
+    def construct_projectors(self, pos, dims):
+        state_0 = [[0] * np.prod(dims[pos])]
+        state_0[0][0] = 1
+        state_0 = tf.transpose(tf.constant(state_0, tf.complex128))
+
+        state_1 = [[0] * np.prod(dims[pos])]
+        state_1[0][1] = 1
+        state_1 = tf.transpose(tf.constant(state_1, tf.complex128))
+
+        state_m = [[0] * np.prod(dims[pos])]
+        state_m[0][2] = 1
+        state_m = tf.transpose(tf.constant(state_m, tf.complex128))
+
+        proj_m1 = tf.matmul(state_m, tf.transpose(state_1, conjugate=True))
+        proj_m0 = tf.matmul(state_m, tf.transpose(state_0, conjugate=True))
+        proj_11 = tf.matmul(state_1, tf.transpose(state_1, conjugate=True))
+        proj_01 = tf.matmul(state_0, tf.transpose(state_1, conjugate=True))
+
+        self.proj = {}
+        self.proj["proj_m1"] = hskron(proj_m1, pos, dims)
+        self.proj["proj_m0"] = hskron(proj_m0, pos, dims)
+        self.proj["proj_11"] = hskron(proj_11, pos, dims)
+        self.proj["proj_01"] = hskron(proj_01, pos, dims)
+
+    def init_Hs(self, ann_oper):
+        resonator = hamiltonians["resonator"]
+        self.Hs["freq"] = tf.constant(resonator(ann_oper), dtype=tf.complex128)
+        if self.hilbert_dim > 2:
+            duffing = hamiltonians["duffing"]
+            self.Hs["Em"] = 0.5 * tf.constant(duffing(ann_oper), dtype=tf.complex128)
+
+    def init_Ls(self, ann_oper):
+
+        self.collapse_ops["gamma0"] = self.proj["proj_m0"]
+        self.collapse_ops["gamma1"] = self.proj["proj_m1"]
+        self.collapse_ops["t1"] = self.proj["proj_01"]
+        self.collapse_ops["t2"] = self.proj["proj_11"]
+
+    def get_Hamiltonian(
+        self, signal: Union[dict, bool] = None, transform: tf.Tensor = None
+    ):
+        Hs = self.get_transformed_hamiltonians(transform)
+        H_freq = Hs["freq"]
+
+        if isinstance(signal, dict):
+            sig = signal["values"]
+            freq = tf.cast(self.get_freq(sig), tf.complex128)
+            freq = tf.reshape(freq, [freq.shape[0], 1, 1])
+            tf.expand_dims(H_freq, 0) * freq
+        else:
+            freq = self.params["freq"]
+
+        h = freq * H_freq
+        if self.hilbert_dim > 2:
+            h += self.params["Em"] * Hs["Em"]
+
+        return h
+
+    def get_Lindbladian(self, dims):
+        """
+        Compute the Lindbladian, based on relaxation, dephasing constants and finite
+        temperature. It also contains incoherent tunneling of the ground and excited
+        state to the measured state.
+
+        Returns
+        -------
+        tf.Tensor
+            Lindbladian
+
+        """
+        Ls = []
+        if "t1" in self.params:
+            t1 = self.params["t1"].get_value()
+            gamma = (1 / t1) ** 0.5
+            L = gamma * self.collapse_ops["t1"]
+            Ls.append(L)
+
+            # TODO = Check how temeperature affects tunneling
+            # One way it would affect is that it would excite the JPM
+            # That would lead to an increased tunneling and dark counts
+            # But does temperature affect the tunneling rates too?
+
+            # if "temp" in self.params:
+            #     if self.hilbert_dim > 2:
+            #         freq = self.params["freq"].get_value()
+            #         anhar = self.params["anhar"].get_value()
+            #         freq_diff = np.array(
+            #             [freq + n * anhar for n in range(self.hilbert_dim)]
+            #         )
+            #     else:
+            #         freq_diff = np.array([self.params["freq"].get_value(), 0])
+            #     beta = 1 / (self.params["temp"].get_value() * kb)
+            #     det_bal = tf.exp(-hbar * tf.cast(freq_diff, tf.float64) * beta)
+            #     det_bal_mat = hskron(tf.linalg.tensor_diag(det_bal), self.index, dims)
+            #     L = gamma * tf.matmul(self.collapse_ops["temp"], det_bal_mat)
+            #     Ls.append(L)
+
+        if "t2star" in self.params:
+            gamma = (1 / self.params["t2star"].get_value()) ** 0.5
+            L = gamma * self.collapse_ops["t2star"]
+            Ls.append(L)
+
+        if "gamma0" in self.params:
+            gamma = np.sqrt(self.params["gamma0"])
+            L = gamma * self.collapse_ops["gamma0"]
+
+        if "gamma1" in self.params:
+            gamma = np.sqrt(self.params["gamma1"])
+            L = gamma * self.collapse_ops["gamma1"]
+
+        if not Ls:
+            raise Exception("No T1 or T2 provided")
+        self.Ls = Ls
+        return tf.cast(sum(Ls), tf.complex128)

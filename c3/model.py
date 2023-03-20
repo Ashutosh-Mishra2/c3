@@ -11,6 +11,7 @@ from c3.c3objs import hjson_encode, hjson_decode
 from c3.libraries.chip import device_lib, Drive, Coupling
 from c3.libraries.tasks import task_lib
 from typing import Dict, List, Tuple, Union
+import c3.libraries.chip as chip
 
 
 class Model:
@@ -180,6 +181,9 @@ class Model:
         indx = 0
         ann_opers = self.ann_opers
         for subs in self.subsystems.values():
+            if type(subs) == chip.JPM:
+                subs.construct_projectors(indx, self.dims)
+
             subs.init_Hs(ann_opers[indx])
             subs.init_Ls(ann_opers[indx])
             subs.set_subspace_index(indx)
