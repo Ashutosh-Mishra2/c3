@@ -1317,13 +1317,21 @@ class JPM(PhysicalComponent):
         self,
         freq,
         Em,
+        name,
+        desc=None,
+        comment=None,
         gamma0=None,
         gamma1=None,
         t1=None,
         t2star=None,
         temp=None,
+        params=None,
     ):
-        self.param["freq"] = freq
+        super().__init__(
+            name=name, desc=desc, comment=comment, hilbert_dim=3, params=params
+        )
+
+        self.params["freq"] = freq
         self.params["Em"] = Em
         if gamma0:
             self.params["gamma0"] = gamma0
@@ -1390,11 +1398,12 @@ class JPM(PhysicalComponent):
             freq = tf.reshape(freq, [freq.shape[0], 1, 1])
             tf.expand_dims(H_freq, 0) * freq
         else:
-            freq = self.params["freq"]
+            freq = tf.cast(self.params["freq"], tf.complex128)
 
         h = freq * H_freq
         if self.hilbert_dim > 2:
-            h += self.params["Em"] * Hs["Em"]
+            em = tf.cast(self.params["Em"], tf.complex128)
+            h += em * Hs["Em"]
 
         return h
 
