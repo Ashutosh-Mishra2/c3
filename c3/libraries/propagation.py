@@ -690,7 +690,13 @@ def tf_expm_dynamic(A, acc=1e-5):
 
 @state_deco
 def ode_solver(
-    model: Model, gen: Generator, instr: Instruction, init_state, solver, step_function
+    model: Model,
+    gen: Generator,
+    instr: Instruction,
+    init_state,
+    solver,
+    step_function,
+    h0_drive,
 ) -> Dict:
 
     signal = gen.generate_signals(instr)
@@ -703,7 +709,7 @@ def ode_solver(
 
     interpolate_res = solver_slicing[solver][2]
 
-    Hs_dict = model.Hs_of_t(signal, interpolate_res=interpolate_res)
+    Hs_dict = model.Hs_of_t(signal, interpolate_res=interpolate_res, h0_drive=h0_drive)
     Hs = Hs_dict["Hs"]
     ts = Hs_dict["ts"]
     dt = Hs_dict["dt"]

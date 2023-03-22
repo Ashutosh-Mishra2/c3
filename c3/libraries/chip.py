@@ -304,7 +304,7 @@ class Resonator(PhysicalComponent):
         Ls = []
         if "t1" in self.params:
             t1 = self.params["t1"].get_value()
-            gamma = (0.5 / t1) ** 0.5
+            gamma = (1 / t1) ** 0.5
             L = gamma * self.collapse_ops["t1"]
             Ls.append(L)
             if "temp" in self.params:
@@ -1344,7 +1344,8 @@ class JPM(PhysicalComponent):
         if temp:
             self.params["temp"] = temp
 
-    def get_freq(self, freq):
+    def get_freq(self, signal):
+        freq = signal * 1e9
         self.params["freq"] = freq
         return freq
 
@@ -1412,6 +1413,10 @@ class JPM(PhysicalComponent):
         Compute the Lindbladian, based on relaxation, dephasing constants and finite
         temperature. It also contains incoherent tunneling of the ground and excited
         state to the measured state.
+
+        TODO - There are two questions here left to answer -
+            1. How does temeperature affect tunneling?
+            2. How are the tunneling rates dependent on the frequency of the JPM?
 
         Returns
         -------

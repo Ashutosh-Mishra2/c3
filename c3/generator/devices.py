@@ -938,32 +938,6 @@ class Mixer(Device):
         # TODO: Check consistency of the signs between Mixer, LO and AWG classes
         return self.signal
 
-@dev_reg_deco
-class RealMixer(Device):
-    """Superposes two real input signals."""
-
-    def __init__(self, **props):
-        super().__init__(**props)
-        self.inputs = props.pop("inputs", 2)
-        self.outputs = props.pop("outputs", 1)
-
-    def process(self, instr: Instruction, chan: str, in1: dict, in2: dict):
-        """Combine signal from AWG and LO.
-
-        Parameters
-        ----------
-        lo_signal : dict
-            Local oscillator signal.
-        awg_signal : dict
-            Waveform generator signal.
-
-        Returns
-        -------
-        dict
-            Mixed signal.
-        """
-        self.signal = {"values": (in1["values"] + in2["values"]) / 2.0, "ts": in1["ts"]}
-        return self.signal
 
 @dev_reg_deco
 class LONoise(Device):

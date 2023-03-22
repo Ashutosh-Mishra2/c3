@@ -52,8 +52,8 @@ class Model:
         self.tasks: dict = dict()
         self.drift_ham = None
         self.dressed_drift_ham = None
-        self.__hamiltonians = None
-        self.__dressed_hamiltonians = None
+        self._hamiltonians = None
+        self._dressed_hamiltonians = None
         self.init_state = None
         if subsystems:
             self.set_components(subsystems, couplings, max_excitations)
@@ -389,10 +389,10 @@ class Model:
                 signal_hamiltonian = self.drift_ham
         else:
             if self.dressed:
-                hamiltonians = copy.deepcopy(self.__dressed_hamiltonians)
+                hamiltonians = copy.deepcopy(self._dressed_hamiltonians)
                 transform = self.transform
             else:
-                hamiltonians = copy.deepcopy(self.__hamiltonians)
+                hamiltonians = copy.deepcopy(self._hamiltonians)
                 transform = None
             for key, sig in signal.items():
                 if key in self.subsystems:
@@ -412,6 +412,43 @@ class Model:
                     for h in hamiltonians.values()
                 ]
             )
+
+        if self.max_excitations:
+            signal_hamiltonian = self.cut_excitations(signal_hamiltonian)
+
+        return signal_hamiltonian
+
+    def get_Hamiltonian_tf(self, signal):
+        """
+        Get a list of hamiltonians over time for an input signal.
+        Also, this is tensorflow compatible.
+        """
+        if self.dressed:
+            hamiltonians = copy.deepcopy(self._dressed_hamiltonians)
+            transform = self.transform
+        else:
+            hamiltonians = copy.deepcopy(self._hamiltonians)
+            transform = None
+
+        for key, sig in signal.items():
+            if key in self.subsystems:
+                hamiltonians[key] = self.subsystems[key].get_Hamiltonian(sig, transform)
+            elif key in self.couplings:
+                hamiltonians[key] = self.couplings[key].get_Hamiltonian(sig, transform)
+            else:
+                raise Exception(f"Signal channel {key} not in model systems")
+
+        hs = []
+        for i in hamiltonians.values():
+            hs.append(i)
+
+        signal_hamiltonian = tf.zeros(
+            (1, tf.reduce_prod(self.dims), tf.reduce_prod(self.dims)),
+            dtype=tf.complex128,
+        )
+
+        for i in hs:
+            signal_hamiltonian = tf.math.add(signal_hamiltonian, i)
 
         if self.max_excitations:
             signal_hamiltonian = self.cut_excitations(signal_hamiltonian)
@@ -448,7 +485,7 @@ class Model:
 
         self.drift_ham = sum(hamiltonians.values())
         self.control_hams = control_hams
-        self.__hamiltonians = hamiltonians
+        self._hamiltonians = hamiltonians
 
     def update_Lindbladians(self):
         """Return Lindbladian operators and their prefactors."""
@@ -515,7 +552,7 @@ class Model:
         dressed_control_hams = {}
         dressed_col_ops = []
         dressed_hamiltonians = dict()
-        for k, h in self.__hamiltonians.items():
+        for k, h in self._hamiltonians.items():
             dressed_hamiltonians[k] = tf.matmul(
                 tf.matmul(tf.linalg.adjoint(self.transform), h), self.transform
             )
@@ -529,7 +566,7 @@ class Model:
             )
         self.dressed_drift_ham = dressed_drift_ham
         self.dressed_control_hams = dressed_control_hams
-        self.__dressed_hamiltonians = dressed_hamiltonians
+        self._dressed_hamiltonians = dressed_hamiltonians
         if self.lindbladian:
             for col_op in self.col_ops:
                 dressed_col_ops.append(
@@ -645,7 +682,7 @@ class Model:
             deph_ch = deph_ch * ((1 - p) * Id + p * Z)
         return deph_ch
 
-    def Hs_of_t(self, signal, interpolate_res=2, L_dag_L=None):
+    def Hs_of_t(self, signal, interpolate_res=2, L_dag_L=None, h0_drive=False):
         """
         Generate a list of Hamiltonians for each time step of interpolated signal for Runge-Kutta Methods.
 
@@ -658,17 +695,15 @@ class Model:
         Returns:
             dict: List of Hamiltonians (or effective Hamiltonians for stochastic case) for each time step.
         """
-        h0, hctrls = self.get_Hamiltonians()
 
         ts_list = []
-        signals = []
-        hks = []
         for key in signal:
             ts_list.append(signal[key]["ts"])
-            signals.append(signal[key]["values"])
-            hks.append(hctrls[key])
 
         ts = tf.math.reduce_mean(ts_list, axis=0)
+        dt = ts[1] - ts[0]
+        dt = tf.cast(dt, dtype=tf.complex128)
+
         # Only do the safety check outside of graph mode for performance reasons.
         # When using graph mode, the safety check will still be executed ONCE during tracing
         if tf.executing_eagerly() and not tf.reduce_all(
@@ -679,19 +714,39 @@ class Model:
             tf.math.reduce_variance(ts[1:] - ts[:-1]) < 1e-5 * (ts[1] - ts[0])  # type: ignore
         ):
             raise Exception("C3Error:Something with the times happend.")
-        dt = ts[1] - ts[0]
-        dt = tf.cast(dt, dtype=tf.complex128)
 
-        signals_interp = []
-        for sig in signals:
-            sig_new = tf_utils.interpolate_signal(ts, sig, interpolate_res)
-            signals_interp.append(sig_new)
-
-        cflds = tf.cast(signals_interp, tf.complex128)
-        hks = tf.cast(hks, tf.complex128)
-
-        Hs = self.calculate_sum_Hs(h0, hks, cflds, L_dag_L)
         ts = tf.cast(ts, dtype=tf.complex128)
+
+        if not h0_drive:
+            h0, hctrls = self.get_Hamiltonians()
+            signals = []
+            hks = []
+            for key in signal:
+                signals.append(signal[key]["values"])
+                hks.append(hctrls[key])
+
+            signals_interp = []
+            for sig in signals:
+                sig_new = tf_utils.interpolate_signal(ts, sig, interpolate_res)
+                signals_interp.append(sig_new)
+
+            cflds = tf.cast(signals_interp, tf.complex128)
+            hks = tf.cast(hks, tf.complex128)
+
+            Hs = self.calculate_sum_Hs(h0, hks, cflds, L_dag_L)
+
+        else:
+            signals_interp = {}
+            for key in signal:
+                sig = signal[key]["values"]
+                sig_new = tf_utils.interpolate_signal(ts, sig, interpolate_res)
+                signals_interp[key] = {}
+                signals_interp[key]["values"] = sig_new
+                signals_interp[key]["ts"] = signal[key]["ts"]
+
+            Hs = self.get_Hamiltonian_tf(signal=signals_interp)
+            if L_dag_L is not None:
+                Hs = Hs - 0.5j * tf.reduce_sum(tf.reduce_sum(L_dag_L, axis=0), axis=0)
 
         return {"Hs": Hs, "ts": ts, "dt": dt}
 

@@ -634,7 +634,11 @@ class Experiment:
         return [[np.real(trace)]]  # ,[np.imag(trace)]]
 
     def compute_states(
-        self, solver="rk4", step_function="schrodinger", prop_method="ode_solver"
+        self,
+        solver="rk4",
+        step_function="schrodinger",
+        prop_method="ode_solver",
+        h0_drive=False,
     ):
         """
         Use a state solver to compute the trajectory of the system.
@@ -677,6 +681,7 @@ class Experiment:
                 init_state,
                 solver=solver,
                 step_function=step_function,
+                h0_drive=h0_drive,
             )
             state_list = tf.concat([state_list, result["states"]], 0)
             ts_list = tf.concat([ts_list, tf.add(result["ts"], ts_init)], 0)
