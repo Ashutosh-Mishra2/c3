@@ -696,7 +696,6 @@ def ode_solver(
     init_state,
     solver,
     step_function,
-    h0_drive,
 ) -> Dict:
 
     signal = gen.generate_signals(instr)
@@ -709,7 +708,7 @@ def ode_solver(
 
     interpolate_res = solver_slicing[solver][2]
 
-    Hs_dict = model.Hs_of_t(signal, interpolate_res=interpolate_res, h0_drive=h0_drive)
+    Hs_dict = model.Hs_of_t(signal, interpolate_res=interpolate_res)
     Hs = Hs_dict["Hs"]
     ts = Hs_dict["ts"]
     dt = Hs_dict["dt"]

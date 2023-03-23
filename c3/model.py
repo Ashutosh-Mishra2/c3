@@ -60,6 +60,10 @@ class Model:
         if tasks:
             self.set_tasks(tasks)
         self.controllability = True
+        self.h0_drive = False
+
+    def set_H0_drive(self, h0_drive=False):
+        self.h0_drive = h0_drive
 
     def set_init_state(self, state):
         if self.lindbladian and state.shape[0] != state.shape[1]:
@@ -682,7 +686,7 @@ class Model:
             deph_ch = deph_ch * ((1 - p) * Id + p * Z)
         return deph_ch
 
-    def Hs_of_t(self, signal, interpolate_res=2, L_dag_L=None, h0_drive=False):
+    def Hs_of_t(self, signal, interpolate_res=2, L_dag_L=None):
         """
         Generate a list of Hamiltonians for each time step of interpolated signal for Runge-Kutta Methods.
 
@@ -717,7 +721,7 @@ class Model:
 
         ts = tf.cast(ts, dtype=tf.complex128)
 
-        if not h0_drive:
+        if not self.h0_drive:
             h0, hctrls = self.get_Hamiltonians()
             signals = []
             hks = []
