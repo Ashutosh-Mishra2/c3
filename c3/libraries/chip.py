@@ -1315,9 +1315,10 @@ class JPM(PhysicalComponent):
 
     def __init__(
         self,
-        freq,
-        Em,
         name,
+        freq=None,
+        Em=None,
+        hilbert_dim=3,
         desc=None,
         comment=None,
         gamma0=None,
@@ -1328,11 +1329,17 @@ class JPM(PhysicalComponent):
         params=None,
     ):
         super().__init__(
-            name=name, desc=desc, comment=comment, hilbert_dim=3, params=params
+            name=name,
+            desc=desc,
+            comment=comment,
+            hilbert_dim=hilbert_dim,
+            params=params,
         )
 
-        self.params["freq"] = freq
-        self.params["Em"] = Em
+        if freq:
+            self.params["freq"] = freq
+        if Em:
+            self.params["Em"] = Em
         if gamma0:
             self.params["gamma0"] = gamma0
         if gamma1:
