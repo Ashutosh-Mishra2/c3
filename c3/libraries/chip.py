@@ -1391,7 +1391,7 @@ class JPM(PhysicalComponent):
         self.collapse_ops["gamma0"] = self.proj["proj_m0"]
         self.collapse_ops["gamma1"] = self.proj["proj_m1"]
         self.collapse_ops["t1"] = self.proj["proj_01"]
-        self.collapse_ops["t2"] = self.proj["proj_11"]
+        self.collapse_ops["t2star"] = self.proj["proj_11"]
 
     def get_Hamiltonian(
         self, signal: Union[dict, bool] = None, transform: tf.Tensor = None
