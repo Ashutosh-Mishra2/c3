@@ -1344,10 +1344,16 @@ class JPM(PhysicalComponent):
         if temp:
             self.params["temp"] = temp
 
-    def get_freq(self, signal):
-        freq = signal * 1e9
-        self.params["freq"] = freq
-        return freq
+        self.params_tf = {}
+        self.params_tf["Em"] = self.params[
+            "Em"
+        ].get_value()  # tensorflow compatible parameters dict
+
+    def set_freq(self, signal, extend_bounds=False):
+        self.params["freq"].set_value(signal, extend_bounds=extend_bounds)
+
+    def get_freq(self):
+        return self.params["freq"]
 
     def construct_projectors(self, pos, dims):
         state_0 = [[0] * np.prod(dims[pos])]
@@ -1395,15 +1401,17 @@ class JPM(PhysicalComponent):
 
         if isinstance(signal, dict):
             sig = signal["values"]
-            freq = tf.cast(self.get_freq(sig), tf.complex128)
+            # self.set_freq(sig)
+            # freq = tf.cast(self.get_freq().get_value(), tf.complex128)
+            freq = tf.cast(2 * np.pi * sig, tf.complex128)
             freq = tf.reshape(freq, [freq.shape[0], 1, 1])
             tf.expand_dims(H_freq, 0) * freq
         else:
-            freq = tf.cast(self.params["freq"], tf.complex128)
+            freq = tf.cast(self.params["freq"].get_value(), tf.complex128)
 
         h = freq * H_freq
         if self.hilbert_dim > 2:
-            em = tf.cast(self.params["Em"], tf.complex128)
+            em = tf.cast(self.params_tf["Em"], tf.complex128)
             h += em * Hs["Em"]
 
         return h
