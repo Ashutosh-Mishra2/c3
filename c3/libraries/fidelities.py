@@ -1053,7 +1053,9 @@ def readout_and_clear(states: tf.Tensor, index, dims, params, n_eval=-1):
     a_rotated = params["a_rotated"]
     d_max = params["cutoff_distance"]
     lindbladian = params["lindbladian"]
-    Nr = params["Number_op"]
+    # Nr = params["Number_op"]
+    clear_target_g = params["clear_target_ground"]
+    clear_target_e = params["clear_target_excited"]
 
     psis_g = states[0]
     psis_e = states[1]
@@ -1065,10 +1067,16 @@ def readout_and_clear(states: tf.Tensor, index, dims, params, n_eval=-1):
     max_distance = tf.reduce_max(distances)
     readout_infid = tf.exp(-max_distance / d_max)
 
-    Ng_final = tf.abs(calculate_expect_value(psis_g[-1], Nr, lindbladian))
-    Ne_final = tf.abs(calculate_expect_value(psis_e[-1], Nr, lindbladian))
+    # Ng_final = tf.abs(calculate_expect_value(psis_g[-1], Nr, lindbladian))
+    # Ne_final = tf.abs(calculate_expect_value(psis_e[-1], Nr, lindbladian))
 
-    return readout_infid + Ng_final + Ne_final
+    overlap_g = calculate_state_overlap(psis_g[-1], clear_target_g)
+    overlap_e = calculate_state_overlap(psis_e[-1], clear_target_e)
+
+    clear_infid = 1 - (overlap_e + overlap_g) / 2
+
+    # return readout_infid + Ng_final + Ne_final
+    return readout_infid + clear_infid
 
 
 @fid_reg_deco
