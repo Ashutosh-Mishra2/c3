@@ -1048,6 +1048,30 @@ def readout_ode(states: tf.Tensor, index, dims, params, n_eval=-1):
 
 
 @fid_reg_deco
+def readout_and_clear(states: tf.Tensor, index, dims, params, n_eval=-1):
+    print("Calculating fidelity")
+    a_rotated = params["a_rotated"]
+    d_max = params["cutoff_distance"]
+    lindbladian = params["lindbladian"]
+    Nr = params["Number_op"]
+
+    psis_g = states[0]
+    psis_e = states[1]
+
+    alphas_g = calculate_expect_value(psis_g, a_rotated, lindbladian)
+    alphas_e = calculate_expect_value(psis_e, a_rotated, lindbladian)
+
+    distances = tf.abs(alphas_g - alphas_e)
+    max_distance = tf.reduce_max(distances)
+    readout_infid = tf.exp(-max_distance / d_max)
+
+    Ng_final = tf.abs(calculate_expect_value(psis_g[-1], Nr, lindbladian))
+    Ne_final = tf.abs(calculate_expect_value(psis_e[-1], Nr, lindbladian))
+
+    return readout_infid + Ng_final + Ne_final
+
+
+@fid_reg_deco
 def swap_and_readout_ode(states: tf.Tensor, index, dims, params, n_eval=-1):
     print("Calculating fidelity")
     a_rotated = params["a_rotated"]
