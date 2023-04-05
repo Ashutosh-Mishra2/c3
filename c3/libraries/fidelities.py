@@ -1056,6 +1056,8 @@ def readout_and_clear(states: tf.Tensor, index, dims, params, n_eval=-1):
     # Nr = params["Number_op"]
     clear_target_g = params["clear_target_ground"]
     clear_target_e = params["clear_target_excited"]
+    readout_cost = params["readout_cost"]  # Penalty for bad readout
+    clear_cost = params["clear_cost"]  # Penalty for bad clear
 
     psis_g = states[0]
     psis_e = states[1]
@@ -1076,7 +1078,7 @@ def readout_and_clear(states: tf.Tensor, index, dims, params, n_eval=-1):
     clear_infid = 1 - (overlap_e + overlap_g) / 2
 
     # return readout_infid + Ng_final + Ne_final
-    return readout_infid + clear_infid
+    return readout_cost * readout_infid + clear_cost * clear_infid
 
 
 @fid_reg_deco
