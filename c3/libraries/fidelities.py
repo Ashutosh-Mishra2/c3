@@ -1082,6 +1082,33 @@ def readout_and_clear(states: tf.Tensor, index, dims, params, n_eval=-1):
 
 
 @fid_reg_deco
+def readout_and_clear_prod(states: tf.Tensor, index, dims, params, n_eval=-1):
+    print("Calculating fidelity")
+    a_rotated = params["a_rotated"]
+    d_max = params["cutoff_distance"]
+    lindbladian = params["lindbladian"]
+    clear_target_g = params["clear_target_ground"]
+    clear_target_e = params["clear_target_excited"]
+
+    psis_g = states[0]
+    psis_e = states[1]
+
+    alphas_g = calculate_expect_value(psis_g, a_rotated, lindbladian)
+    alphas_e = calculate_expect_value(psis_e, a_rotated, lindbladian)
+
+    distances = tf.abs(alphas_g - alphas_e)
+    max_distance = tf.reduce_max(distances)
+    readout_fid = 1 - tf.exp(-max_distance / d_max)
+
+    overlap_g = calculate_state_overlap(psis_g[-1], clear_target_g)
+    overlap_e = calculate_state_overlap(psis_e[-1], clear_target_e)
+
+    clear_fid = (overlap_e + overlap_g) / 2
+
+    return 1 - (readout_fid * clear_fid)
+
+
+@fid_reg_deco
 def swap_and_readout_ode(states: tf.Tensor, index, dims, params, n_eval=-1):
     print("Calculating fidelity")
     a_rotated = params["a_rotated"]
