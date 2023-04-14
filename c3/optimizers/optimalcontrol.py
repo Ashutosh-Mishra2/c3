@@ -328,7 +328,8 @@ class OptimalControl(Optimizer):
         )
         states_g = result_g["states"]
 
-        states = [states_e, states_g]
+        # states = [states_e, states_g]
+        states = [states_g, states_e]
         goal = self.fid_func(
             states=states,
             index=self.index,
