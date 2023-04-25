@@ -1023,6 +1023,16 @@ def calculate_state_overlap(psi1, psi2):
         return tf_ketket_fid(psi1, psi2)[0]
 
 
+def calculate_state_overlap_batch(psi_list, psi_target):
+    if psi_list.shape[1] == psi_list.shape[2]:
+        return (tf.linalg.trace(tf.abs(tf.sqrt(tf.matmul(psi_list, psi_target))))) ** 2
+    else:
+        return tf.reshape(
+            tf.abs(tf.matmul(tf.linalg.adjoint(psi_list), psi_target)),
+            psi_list.shape[0],
+        )
+
+
 def calculate_expect_value(psi, op, lindbladian):
     if lindbladian:
         expect = tf.linalg.trace(tf.matmul(psi, op))
@@ -1227,4 +1237,15 @@ def readoutswap_trace_prod(states: tf.Tensor, index, dims, params, n_eval=-1):
     swap_fid = (ground_pop_g + ground_pop_e) / 2
     infid = 1 - (swap_fid * iq_fid)
 
+    return tf.abs(infid)
+
+
+@fid_reg_deco
+def qubit_reset(states: tf.Tensor, index, dims, params, n_eval=-1):
+    psi_target = params["target"]
+
+    overlaps = calculate_state_overlap_batch(states, psi_target)
+    max_overlap = tf.reduce_max(overlaps)
+
+    infid = 1 - max_overlap
     return tf.abs(infid)
