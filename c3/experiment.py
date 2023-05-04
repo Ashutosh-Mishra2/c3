@@ -661,6 +661,12 @@ class Experiment:
         state_list = tf.expand_dims(init_state, 0)
         ts_list = [ts_init]
 
+        collapse_ops = []
+        for key in model.subsystems:
+            Ls = model.subsystems[key].Ls
+            collapse_ops = collapse_ops + Ls
+        model.collapse_ops = tf.convert_to_tensor(collapse_ops, dtype=tf.complex128)
+
         sequence = self.opt_gates
 
         self.set_prop_method(prop_method)
@@ -912,3 +918,89 @@ class Experiment:
         result = pool.map(single_stochastic_run_tf, tf.unstack(plist))
         self.results.append(result)
         return result
+
+    def solve_stochastic_master_equation(
+        self,
+        num_shots,
+        num_threads=None,
+        solver="vern7",
+        step_function="lindblad",
+        prop_method="sme_solver",
+    ):
+        """
+        Simulate multiple shots of stochastic master equation.
+        This is for continuous weak measurement to simulate the
+        readout process.
+
+        Returns
+        -------
+        List[tf.tensor]
+            List of states of the system from simulation.
+
+        """
+
+        model = self.pmap.model
+        self.solver = solver
+        self.step_function = step_function
+
+        init_state = self.pmap.model.get_init_state()
+        if init_state.shape[0] != init_state.shape[1]:
+            init_state = tf_state_to_dm(init_state)
+        self.init_state = init_state
+
+        self.set_prop_method(prop_method)
+
+        collapse_ops = []
+        for key in model.subsystems:
+            Ls = model.subsystems[key].Ls
+            collapse_ops = collapse_ops + Ls
+        model.collapse_ops = tf.convert_to_tensor(collapse_ops, dtype=tf.complex128)
+
+        # single_SME_tf = tf.function(self.single_SME)
+        psi_shots = []
+        ts_list = []
+        for num in range(num_shots):
+            print(f"Running shot {num}")
+            state_list, ts_list = self.single_SME()
+            psi_shots.append(state_list)
+        psi_shots = tf.convert_to_tensor(psi_shots, dtype=tf.complex128)
+        ts_list = tf.convert_to_tensor(ts_list, dtype=tf.complex128)
+
+        return {"states": psi_shots, "ts": ts_list}
+
+    def single_SME(self):
+        print("Starting a SME")
+
+        generator = self.pmap.generator
+        instructions = self.pmap.instructions
+        model = self.pmap.model
+        sequence = self.opt_gates
+
+        ts_init = tf.constant(0.0, dtype=tf.complex128)
+        ts_list = [ts_init]
+        state_list = tf.expand_dims(self.init_state, 0)
+
+        init_state = self.init_state
+
+        for gate in sequence:
+            try:
+                instr = instructions[gate]
+            except KeyError:
+                raise Exception(
+                    f"C3:Error: Gate '{gate}' is not defined."
+                    f" Available gates are:\n {list(instructions.keys())}."
+                )
+            result = self.propagation(
+                model,
+                generator,
+                instr,
+                init_state,
+                solver=self.solver,
+                step_function=self.step_function,
+            )
+            state_list = tf.concat([state_list, result["states"]], 0)
+            ts_list = tf.concat([ts_list, tf.add(result["ts"], ts_init)], 0)
+            init_state = result["states"][-1]
+            ts_init = result["ts"][-1]
+
+        return state_list, ts_list

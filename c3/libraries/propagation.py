@@ -701,7 +701,8 @@ def ode_solver(
     signal = gen.generate_signals(instr)
 
     if model.lindbladian:
-        col = model.get_Lindbladians()
+        # col = model.get_Lindbladians()
+        col = model.collapse_ops
         step_function = "lindblad"
     else:
         col = None
@@ -1370,9 +1371,9 @@ def vern8(func, rho, h, dt, col=None):
 
 
 @step_deco
-def lindblad(rho, h, dt, col):
+def lindblad(rho, h, dt, cols):
     del_rho = -1j * commutator(h, rho)
-    for col in col:
+    for col in cols:
         del_rho += tf.matmul(tf.matmul(col, rho), tf.transpose(col, conjugate=True))
         del_rho -= 0.5 * anticommutator(
             tf.matmul(tf.transpose(col, conjugate=True), col), rho
@@ -1472,3 +1473,44 @@ def stochastic_lind_traj(h, psi, dt, col_ops, plist, solver_function):
         col = tf.reduce_sum(tf.reduce_sum(tf.multiply(plist, col_ops), axis=1), axis=0)
         psi_new = tf.matmul(col, psi)
         return psi_new
+
+
+@state_deco
+def sme_solver(
+    model: Model, gen: Generator, instr: Instruction, init_state, solver, step_function
+):
+    signal = gen.generate_signals(instr)
+
+    if model.lindbladian:
+        col = model.collapse_ops
+        step_function = "lindblad"
+    else:
+        col = None
+
+    interpolate_res = solver_slicing[solver][2]
+
+    Hs_dict = model.Hs_of_t(signal, interpolate_res=interpolate_res)
+    Hs = Hs_dict["Hs"]
+    ts = Hs_dict["ts"]
+    dt = Hs_dict["dt"]
+
+    state_list = tf.TensorArray(
+        tf.complex128, size=ts.shape[0], dynamic_size=False, infer_shape=False
+    )
+    state_t = init_state
+    start = solver_slicing[solver][0]
+    stop = solver_slicing[solver][1]
+    ode_step = step_dict[step_function]
+    solver_function = solver_dict[solver]
+    for index in tf.range(ts.shape[0]):
+        h = tf.slice(Hs, [start * index, 0, 0], [stop, Hs.shape[1], Hs.shape[2]])
+        state_t = solver_function(ode_step, state_t, h, dt, col=col)
+        state_list = state_list.write(index, state_t)
+
+    states = state_list.stack()
+
+    return {"states": states, "ts": ts}
+
+
+# @step_deco
+# def sme(rho, h, dt, col):

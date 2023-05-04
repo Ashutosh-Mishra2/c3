@@ -148,3 +148,5 @@ c3_reset/*
 examples/c3example_calibration/
 examples/ml_logs/
 examples/sensi_logs/
+test.ipynb
+basic_setup.hjson
