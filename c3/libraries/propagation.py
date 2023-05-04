@@ -688,6 +688,10 @@ def tf_expm_dynamic(A, acc=1e-5):
     return r
 
 
+############ ODE solvers ###################
+# -------------------------------------------#
+
+
 @state_deco
 def ode_solver(
     model: Model,
@@ -764,89 +768,70 @@ def ode_solver_final_state(
 
 
 @state_deco
-def scipy_integrate(
+def sme_solver(
     model: Model, gen: Generator, instr: Instruction, init_state, solver, step_function
-) -> Dict:
-
-    solvers = ["vode", "zvode", "lsoda", "dopri5", "dop853"]
-    if solver not in solvers:
-        raise Exception(f"solver not found. Available solvers are {solvers}")
-
+):
     signal = gen.generate_signals(instr)
-    h0, hctrls = model.get_Hamiltonians()
-
-    ts_list = []
-    signals = []
-    hks = []
-    for key in signal:
-        ts_list.append(signal[key]["ts"])
-        signals.append(signal[key]["values"])
-        hks.append(hctrls[key])
-
-    ts = tf.reduce_mean(ts_list, axis=0)
-    dt = ts[1] - ts[0]
-    nsteps = ts.shape[0]
-
-    signal_functions = []
-    for sig in signals:
-        signal_fun = interpolate.interp1d(ts, sig, fill_value="extrapolate")
-        signal_functions.append(signal_fun)
 
     if model.lindbladian:
-        collapse = model.get_Lindbladians()
+        col = model.collapse_ops
+        step_function = "lindblad"
     else:
-        collapse = None
+        col = None
 
-    states_list = []
+    interpolate_res = solver_slicing[solver][2]
 
-    def ham_func(t):
-        ham = h0
-        i = 0
-        for sig_fun in signal_functions:
-            ham += sig_fun(t) * hks[i]
-            i += 1
-        return ham
+    Hs_dict = model.Hs_of_t(signal, interpolate_res=interpolate_res)
+    Hs = Hs_dict["Hs"]
+    ts = Hs_dict["ts"]
+    dt = Hs_dict["dt"]
 
-    if model.lindbladian:
+    state_list = tf.TensorArray(
+        tf.complex128, size=ts.shape[0], dynamic_size=False, infer_shape=False
+    )
+    state_t = init_state
+    start = solver_slicing[solver][0]
+    stop = solver_slicing[solver][1]
+    ode_step = step_dict[step_function]
+    solver_function = solver_dict[solver]
+    for index in tf.range(ts.shape[0]):
+        h = tf.slice(Hs, [start * index, 0, 0], [stop, Hs.shape[1], Hs.shape[2]])
+        state_t = solver_function(ode_step, state_t, h, dt, col=col)
+        state_list = state_list.write(index, state_t)
 
-        def ode_func(t, psi):
-            del_rho = -1j * commutator(ham_func(t), psi)
-            for col in collapse:
-                del_rho += tf.matmul(
-                    tf.matmul(col, psi), tf.transpose(col, conjugate=True)
-                )
-                del_rho -= 0.5 * anticommutator(
-                    tf.matmul(tf.transpose(col, conjugate=True), col), psi
-                )
-            return del_rho * dt
-
-    else:
-
-        def ode_func(t, psi):
-            return -1j * tf.linalg.matvec(ham_func(t), psi.T)
-
-    r = integrate.ode(ode_func)
-    r.set_integrator(solver, method="bdf", nsteps=nsteps)
-    r.set_initial_value(init_state, ts[0])
-
-    for i in range(nsteps):
-        states_list.append(r.integrate(r.t + dt))
-
-    states = tf.convert_to_tensor(states_list, dtype=tf.complex128)
-    ts = tf.cast(ts, dtype=tf.complex128)
+    states = state_list.stack()
 
     return {"states": states, "ts": ts}
 
 
-def rk_using_butcher_tableau(func, rho, h, dt, tableau, col=None):
-    a, b, c = tableau
-    ks = []
-    for i in range(len(b)):
-        y_new = rho + tf.reduce_sum(tf.multiply(a[i], ks))
-        k_new = func(y_new, h[i], dt, col)
-        ks.append(k_new)
-    rho_new = rho + tf.reduce_sum(tf.multiply(b, ks), axis=0)
-    return rho_new
+# @step_deco
+# def sme(rho, h, dt, col):
+
+########### Step functions ####################
+
+
+@step_deco
+def lindblad(rho, h, dt, cols):
+    del_rho = -1j * commutator(h, rho)
+    for col in cols:
+        del_rho += tf.matmul(tf.matmul(col, rho), tf.transpose(col, conjugate=True))
+        del_rho -= 0.5 * anticommutator(
+            tf.matmul(tf.transpose(col, conjugate=True), col), rho
+        )
+    return del_rho * dt
+
+
+@step_deco
+def schrodinger(psi, h, dt, col=None):
+    return -1j * tf.matmul(h, psi) * dt
+
+
+@step_deco
+def von_neumann(rho, h, dt, col=None):
+    return -1j * commutator(h, rho) * dt
+
+
+########### Solvers #####################
 
 
 @solver_deco
@@ -1369,25 +1354,7 @@ def vern8(func, rho, h, dt, col=None):
     return rho_new
 
 
-@step_deco
-def lindblad(rho, h, dt, cols):
-    del_rho = -1j * commutator(h, rho)
-    for col in cols:
-        del_rho += tf.matmul(tf.matmul(col, rho), tf.transpose(col, conjugate=True))
-        del_rho -= 0.5 * anticommutator(
-            tf.matmul(tf.transpose(col, conjugate=True), col), rho
-        )
-    return del_rho * dt
-
-
-@step_deco
-def schrodinger(psi, h, dt, col=None):
-    return -1j * tf.matmul(h, psi) * dt
-
-
-@step_deco
-def von_neumann(rho, h, dt, col=None):
-    return -1j * commutator(h, rho) * dt
+######## Deprecated functions ############
 
 
 @state_deco
@@ -1401,6 +1368,10 @@ def stochastic_schrodinger_rk4(
     plist: tf.Tensor,
     solver="rk4",
 ) -> Dict:
+
+    """
+    This function is Deprecated.
+    """
 
     signal = gen.generate_signals(instr)
     interpolate_res = solver_slicing[solver][2]
@@ -1421,6 +1392,9 @@ def stochastic_schrodinger_rk4(
 def propagate_stochastic_lind(
     model, hs, collapse_ops, psi_init, t_len, dt, plist, L_dag_L, solver="rk4"
 ):
+    """
+    This function is Deprecated.
+    """
 
     start = solver_slicing[solver][0]
     stop = solver_slicing[solver][1]
@@ -1449,6 +1423,8 @@ def propagate_stochastic_lind(
 
 def stochastic_lind_traj(h, psi, dt, col_ops, plist, solver_function):
     """
+    This function is Deprecated.
+
     Calculates the single time step lindbladian evoultion
     of a state vector.
 
@@ -1475,41 +1451,93 @@ def stochastic_lind_traj(h, psi, dt, col_ops, plist, solver_function):
 
 
 @state_deco
-def sme_solver(
+def scipy_integrate(
     model: Model, gen: Generator, instr: Instruction, init_state, solver, step_function
-):
+) -> Dict:
+
+    """
+    This function is Deprecated.
+    """
+
+    solvers = ["vode", "zvode", "lsoda", "dopri5", "dop853"]
+    if solver not in solvers:
+        raise Exception(f"solver not found. Available solvers are {solvers}")
+
     signal = gen.generate_signals(instr)
+    h0, hctrls = model.get_Hamiltonians()
+
+    ts_list = []
+    signals = []
+    hks = []
+    for key in signal:
+        ts_list.append(signal[key]["ts"])
+        signals.append(signal[key]["values"])
+        hks.append(hctrls[key])
+
+    ts = tf.reduce_mean(ts_list, axis=0)
+    dt = ts[1] - ts[0]
+    nsteps = ts.shape[0]
+
+    signal_functions = []
+    for sig in signals:
+        signal_fun = interpolate.interp1d(ts, sig, fill_value="extrapolate")
+        signal_functions.append(signal_fun)
 
     if model.lindbladian:
-        col = model.collapse_ops
-        step_function = "lindblad"
+        collapse = model.get_Lindbladians()
     else:
-        col = None
+        collapse = None
 
-    interpolate_res = solver_slicing[solver][2]
+    states_list = []
 
-    Hs_dict = model.Hs_of_t(signal, interpolate_res=interpolate_res)
-    Hs = Hs_dict["Hs"]
-    ts = Hs_dict["ts"]
-    dt = Hs_dict["dt"]
+    def ham_func(t):
+        ham = h0
+        i = 0
+        for sig_fun in signal_functions:
+            ham += sig_fun(t) * hks[i]
+            i += 1
+        return ham
 
-    state_list = tf.TensorArray(
-        tf.complex128, size=ts.shape[0], dynamic_size=False, infer_shape=False
-    )
-    state_t = init_state
-    start = solver_slicing[solver][0]
-    stop = solver_slicing[solver][1]
-    ode_step = step_dict[step_function]
-    solver_function = solver_dict[solver]
-    for index in tf.range(ts.shape[0]):
-        h = tf.slice(Hs, [start * index, 0, 0], [stop, Hs.shape[1], Hs.shape[2]])
-        state_t = solver_function(ode_step, state_t, h, dt, col=col)
-        state_list = state_list.write(index, state_t)
+    if model.lindbladian:
 
-    states = state_list.stack()
+        def ode_func(t, psi):
+            del_rho = -1j * commutator(ham_func(t), psi)
+            for col in collapse:
+                del_rho += tf.matmul(
+                    tf.matmul(col, psi), tf.transpose(col, conjugate=True)
+                )
+                del_rho -= 0.5 * anticommutator(
+                    tf.matmul(tf.transpose(col, conjugate=True), col), psi
+                )
+            return del_rho * dt
+
+    else:
+
+        def ode_func(t, psi):
+            return -1j * tf.linalg.matvec(ham_func(t), psi.T)
+
+    r = integrate.ode(ode_func)
+    r.set_integrator(solver, method="bdf", nsteps=nsteps)
+    r.set_initial_value(init_state, ts[0])
+
+    for i in range(nsteps):
+        states_list.append(r.integrate(r.t + dt))
+
+    states = tf.convert_to_tensor(states_list, dtype=tf.complex128)
+    ts = tf.cast(ts, dtype=tf.complex128)
 
     return {"states": states, "ts": ts}
 
 
-# @step_deco
-# def sme(rho, h, dt, col):
+def rk_using_butcher_tableau(func, rho, h, dt, tableau, col=None):
+    """
+    This function is Deprecated
+    """
+    a, b, c = tableau
+    ks = []
+    for i in range(len(b)):
+        y_new = rho + tf.reduce_sum(tf.multiply(a[i], ks))
+        k_new = func(y_new, h[i], dt, col)
+        ks.append(k_new)
+    rho_new = rho + tf.reduce_sum(tf.multiply(b, ks), axis=0)
+    return rho_new
