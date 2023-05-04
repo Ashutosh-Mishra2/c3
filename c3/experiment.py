@@ -661,12 +661,6 @@ class Experiment:
         state_list = tf.expand_dims(init_state, 0)
         ts_list = [ts_init]
 
-        collapse_ops = []
-        for key in model.subsystems:
-            Ls = model.subsystems[key].Ls
-            collapse_ops = collapse_ops + Ls
-        model.collapse_ops = tf.convert_to_tensor(collapse_ops, dtype=tf.complex128)
-
         sequence = self.opt_gates
 
         self.set_prop_method(prop_method)
@@ -939,7 +933,6 @@ class Experiment:
 
         """
 
-        model = self.pmap.model
         self.solver = solver
         self.step_function = step_function
 
@@ -949,12 +942,6 @@ class Experiment:
         self.init_state = init_state
 
         self.set_prop_method(prop_method)
-
-        collapse_ops = []
-        for key in model.subsystems:
-            Ls = model.subsystems[key].Ls
-            collapse_ops = collapse_ops + Ls
-        model.collapse_ops = tf.convert_to_tensor(collapse_ops, dtype=tf.complex128)
 
         # single_SME_tf = tf.function(self.single_SME)
         psi_shots = []

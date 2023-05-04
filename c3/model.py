@@ -345,6 +345,8 @@ class Model:
         self.lindbladian = lindbladian
         self.update_model()
         self.update_init_state()
+        if lindbladian:
+            self.create_collapse_ops_list()
 
     def set_FR(self, use_FR):
         """
@@ -766,6 +768,21 @@ class Model:
                 Hs + h0 - 0.5j * tf.reduce_sum(tf.reduce_sum(L_dag_L, axis=0), axis=0)
             )
         return Hs + h0
+
+    def create_collapse_ops_list(self):
+        """
+        This creates a list of all collapse operators by
+        concatenating all the collapse operators of the
+        individual subsytems.
+        """
+        if self.lindbladian:
+            collapse_ops = []
+            for key in self.subsystems:
+                Ls = self.subsystems[key].Ls
+                collapse_ops = collapse_ops + Ls
+            self.collapse_ops = tf.convert_to_tensor(collapse_ops, dtype=tf.complex128)
+        else:
+            print("Lindbladian is set to False.")
 
 
 class Model_basis_change(Model):

@@ -701,7 +701,6 @@ def ode_solver(
     signal = gen.generate_signals(instr)
 
     if model.lindbladian:
-        # col = model.get_Lindbladians()
         col = model.collapse_ops
         step_function = "lindblad"
     else:
@@ -740,7 +739,7 @@ def ode_solver_final_state(
     signal = gen.generate_signals(instr)
 
     if model.lindbladian:
-        col = model.get_Lindbladians()
+        col = model.collapse_ops
         step_function = "lindblad"
     else:
         col = None
