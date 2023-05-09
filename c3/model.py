@@ -62,6 +62,7 @@ class Model:
         self.controllability = True
         self.h0_drive = False
         self.collapse_ops = None
+        self.measurement_op = None
 
     def set_H0_drive(self, h0_drive=False):
         self.h0_drive = h0_drive

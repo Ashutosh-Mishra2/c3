@@ -688,15 +688,12 @@ class Experiment:
 
         return {"states": state_list, "ts": ts_list}
 
-    ######### Deprecated methods ##########
-    # -------------------------------------#
-
     def solve_stochastic_master_equation(
         self,
         num_shots,
         num_threads=None,
-        solver="vern7",
-        step_function="lindblad",
+        solver="vern7_stochastic",
+        step_function="sme",
         prop_method="sme_solver",
     ):
         """
@@ -710,6 +707,15 @@ class Experiment:
             List of states of the system from simulation.
 
         """
+        model = self.pmap.model
+        if not model.lindbladian:
+            raise Exception("Model.lindbladian has to be True for this method.")
+
+        if model.measurement_op is None:
+            raise Exception("Please specify Model.measurement_op.")
+
+        if model.collapse_ops is None:
+            raise Exception("Model.collapse_ops is None.")
 
         self.solver = solver
         self.step_function = step_function
@@ -722,18 +728,22 @@ class Experiment:
         self.set_prop_method(prop_method)
 
         # single_SME_tf = tf.function(self.single_SME)
+
+        rng = tf.random.get_global_generator()
+        new_rngs = rng.split(num_shots)
+
         psi_shots = []
         ts_list = []
         for num in range(num_shots):
             print(f"Running shot {num}")
-            state_list, ts_list = self.single_SME()
+            state_list, ts_list = self.single_SME(new_rngs[num])
             psi_shots.append(state_list)
         psi_shots = tf.convert_to_tensor(psi_shots, dtype=tf.complex128)
         ts_list = tf.convert_to_tensor(ts_list, dtype=tf.complex128)
 
         return {"states": psi_shots, "ts": ts_list}
 
-    def single_SME(self):
+    def single_SME(self, rng):
         print("Starting a SME")
 
         generator = self.pmap.generator
@@ -760,6 +770,7 @@ class Experiment:
                 generator,
                 instr,
                 init_state,
+                rng=rng,
                 solver=self.solver,
                 step_function=self.step_function,
             )
@@ -769,6 +780,9 @@ class Experiment:
             ts_init = result["ts"][-1]
 
         return state_list, ts_list
+
+    ######### Deprecated methods ##########
+    # -------------------------------------#
 
     def solve_stochastic_ode(
         self,
