@@ -842,8 +842,9 @@ def sme(rho, h, dt, cols, m_op, rng):
 
     new_rngs = rng.split(len(m_op))
     counter = 0
+    dt_float = tf.cast(dt, tf.float32)
     for c in m_op:
-        dW = new_rngs[counter].normal(shape=[1], mean=0, stddev=tf.sqrt(dt))
+        dW = new_rngs[counter].normal(shape=[1], mean=0, stddev=tf.sqrt(dt_float))
         dW = tf.cast(dW, tf.complex128)
         del_rho += tf.matmul(c, rho) + tf.matmul(rho, dagger(c)) * dW
         del_rho -= tf.linalg.trace(rho, (c + dagger(c))) * rho * dW
@@ -1377,9 +1378,9 @@ def vern8(func, rho, h, dt, col=None):
 
 @solver_deco
 def vern7_stochastic(func, rho, h, dt, col, m_op, rng):
-    k1 = func(rho, h[0], dt, col, rng)
-    k2 = func(rho + (1 / 200) * k1, h[1], dt, col, rng)
-    k3 = func(rho + (-4361 / 4050) * k1 + (2401 / 2025) * k2, h[2], dt, col, rng)
+    k1 = func(rho, h[0], dt, col, m_op, rng)
+    k2 = func(rho + (1 / 200) * k1, h[1], dt, col, m_op, rng)
+    k3 = func(rho + (-4361 / 4050) * k1 + (2401 / 2025) * k2, h[2], dt, col, m_op, rng)
     k4 = func(rho + (49 / 1200) * k1 + (49 / 400) * k3, h[3], dt, col, m_op, rng)
     k5 = func(
         rho
