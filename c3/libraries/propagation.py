@@ -838,6 +838,11 @@ def sme(rho, h, dt, cols, m_op, rng):
     for col in cols:
         del_rho += tf.matmul(tf.matmul(col, rho), dagger(col))
         del_rho -= 0.5 * anticommutator(tf.matmul(dagger(col), col), rho)
+
+    for c in m_op:
+        del_rho += tf.matmul(tf.matmul(c, rho), dagger(c))
+        del_rho -= 0.5 * anticommutator(tf.matmul(dagger(c), c), rho)
+
     del_rho = del_rho * dt
 
     dt_float = tf.cast(dt, tf.float32)
