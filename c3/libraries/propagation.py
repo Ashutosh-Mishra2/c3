@@ -14,6 +14,7 @@ from c3.utils.tf_utils import (
     commutator,
     anticommutator,
     compute_dissipation_probs,
+    dagger,
 )
 from scipy import interpolate, integrate
 
@@ -815,10 +816,8 @@ def sme_solver(
 def lindblad(rho, h, dt, cols):
     del_rho = -1j * commutator(h, rho)
     for col in cols:
-        del_rho += tf.matmul(tf.matmul(col, rho), tf.transpose(col, conjugate=True))
-        del_rho -= 0.5 * anticommutator(
-            tf.matmul(tf.transpose(col, conjugate=True), col), rho
-        )
+        del_rho += tf.matmul(tf.matmul(col, rho), dagger(col))
+        del_rho -= 0.5 * anticommutator(tf.matmul(dagger(col), col), rho)
     return del_rho * dt
 
 
@@ -836,10 +835,8 @@ def von_neumann(rho, h, dt, col=None):
 def sme(rho, h, dt, cols, m_op, rng):
     del_rho = -1j * commutator(h, rho)
     for col in cols:
-        del_rho += tf.matmul(tf.matmul(col, rho), tf.transpose(col, conjugate=True))
-        del_rho -= 0.5 * anticommutator(
-            tf.matmul(tf.transpose(col, conjugate=True), col), rho
-        )
+        del_rho += tf.matmul(tf.matmul(col, rho), dagger(col))
+        del_rho -= 0.5 * anticommutator(tf.matmul(dagger(col), col), rho)
 
     del_rho = del_rho * dt
 
@@ -848,12 +845,8 @@ def sme(rho, h, dt, cols, m_op, rng):
     for c in m_op:
         dW = new_rngs[counter].normal(shape=[1], mean=0, stddev=tf.sqrt(dt))
         dW = tf.cast(dW, tf.complex128)
-        del_rho += (
-            tf.matmul(c, rho) + tf.matmul(rho, tf.transpose(c, conjugate=True)) * dW
-        )
-        del_rho -= (
-            tf.linalg.trace(rho, (c + tf.transpose(c, conjugate=True))) * rho * dW
-        )
+        del_rho += tf.matmul(c, rho) + tf.matmul(rho, dagger(c)) * dW
+        del_rho -= tf.linalg.trace(rho, (c + dagger(c))) * rho * dW
         counter += 1
 
     return del_rho
@@ -1674,12 +1667,8 @@ def scipy_integrate(
         def ode_func(t, psi):
             del_rho = -1j * commutator(ham_func(t), psi)
             for col in collapse:
-                del_rho += tf.matmul(
-                    tf.matmul(col, psi), tf.transpose(col, conjugate=True)
-                )
-                del_rho -= 0.5 * anticommutator(
-                    tf.matmul(tf.transpose(col, conjugate=True), col), psi
-                )
+                del_rho += tf.matmul(tf.matmul(col, psi), dagger(col))
+                del_rho -= 0.5 * anticommutator(tf.matmul(dagger(col), col), psi)
             return del_rho * dt
 
     else:

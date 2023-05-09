@@ -634,3 +634,7 @@ def compute_dissipation_probs(Nsubs, dt, psi, L_dag_L):
     plist = tf.math.floor((tf.math.sign(-probs + ps) + 1) / 2)
 
     return tf.cast(plist, dtype=tf.complex128)
+
+
+def dagger(op):
+    return tf.transpose(op, conjugate=True)

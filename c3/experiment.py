@@ -30,6 +30,7 @@ from c3.utils.tf_utils import (
     _tf_matmul_n_even,
     _tf_matmul_n_odd,
     compute_dissipation_probs,
+    dagger,
 )
 
 from c3.libraries.propagation import unitary_provider, state_provider
@@ -839,15 +840,15 @@ class Experiment:
         for key in model.subsystems:
             cols = [
                 tf.matmul(
-                    tf.transpose(collapse_ops[counter][0], conjugate=True),
+                    dagger(collapse_ops[counter][0]),
                     collapse_ops[counter][0],
                 ),
                 tf.matmul(
-                    tf.transpose(collapse_ops[counter][1], conjugate=True),
+                    dagger(collapse_ops[counter][1]),
                     collapse_ops[counter][1],
                 ),
                 tf.matmul(
-                    tf.transpose(collapse_ops[counter][2], conjugate=True),
+                    dagger(collapse_ops[counter][2]),
                     collapse_ops[counter][2],
                 ),
             ]
