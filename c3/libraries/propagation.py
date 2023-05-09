@@ -800,6 +800,7 @@ def sme_solver(
     solver_function = solver_dict[solver]
 
     for index in tf.range(ts.shape[0]):
+        print("SME_solver tracing")
         h = tf.slice(Hs, [start * index, 0, 0], [stop, Hs.shape[1], Hs.shape[2]])
         state_t = solver_function(ode_step, state_t, h, dt, col=col, m_op=m_op, rng=rng)
         state_list = state_list.write(index, state_t)
@@ -837,18 +838,16 @@ def sme(rho, h, dt, cols, m_op, rng):
     for col in cols:
         del_rho += tf.matmul(tf.matmul(col, rho), dagger(col))
         del_rho -= 0.5 * anticommutator(tf.matmul(dagger(col), col), rho)
-
     del_rho = del_rho * dt
 
-    new_rngs = rng.split(len(m_op))
-    counter = 0
     dt_float = tf.cast(dt, tf.float32)
     for c in m_op:
-        dW = new_rngs[counter].normal(shape=[1], mean=0, stddev=tf.sqrt(dt_float))
+        dW = rng.normal(shape=[1], mean=0, stddev=tf.sqrt(dt_float))[0]
         dW = tf.cast(dW, tf.complex128)
         del_rho += tf.matmul(c, rho) + tf.matmul(rho, dagger(c)) * dW
-        del_rho -= tf.linalg.trace(rho, (c + dagger(c))) * rho * dW
-        counter += 1
+        del_rho -= (
+            tf.multiply(tf.linalg.trace(tf.matmul(rho, (c + dagger(c)))), rho) * dW
+        )
 
     return del_rho
 

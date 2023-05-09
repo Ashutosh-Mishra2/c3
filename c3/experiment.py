@@ -75,6 +75,7 @@ class Experiment:
         self.sim_res = sim_res
         self.prop_method = prop_method
         self.set_prop_method(prop_method)
+        self.rng = None
 
     def set_prop_method(self, prop_method=None) -> None:
         """
@@ -696,6 +697,7 @@ class Experiment:
         solver="vern7_stochastic",
         step_function="sme",
         prop_method="sme_solver",
+        rng_seed=12345,
     ):
         """
         Simulate multiple shots of stochastic master equation.
@@ -729,15 +731,14 @@ class Experiment:
         self.set_prop_method(prop_method)
 
         # single_SME_tf = tf.function(self.single_SME)
-
-        rng = tf.random.get_global_generator()
-        new_rngs = rng.split(num_shots)
+        if self.rng is None:
+            self.rng = tf.random.Generator.from_seed(rng_seed)
 
         psi_shots = []
         ts_list = []
         for num in range(num_shots):
             print(f"Running shot {num}")
-            state_list, ts_list = self.single_SME(new_rngs[num])
+            state_list, ts_list = self.single_SME(self.rng)
             psi_shots.append(state_list)
         psi_shots = tf.convert_to_tensor(psi_shots, dtype=tf.complex128)
         ts_list = tf.convert_to_tensor(ts_list, dtype=tf.complex128)
