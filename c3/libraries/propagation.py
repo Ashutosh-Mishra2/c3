@@ -834,6 +834,11 @@ def von_neumann(rho, h, dt, col=None):
 
 @step_deco
 def sme(rho, h, dt, cols, m_op, rng):
+    """
+    Here we should ideally use independent rngs for different measurement
+    operators. But now I am only using one for everything.
+    Maybe pass multiple rngs in the future
+    """
     del_rho = -1j * commutator(h, rho)
     for col in cols:
         del_rho += tf.matmul(tf.matmul(col, rho), dagger(col))

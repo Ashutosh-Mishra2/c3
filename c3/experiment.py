@@ -730,15 +730,19 @@ class Experiment:
 
         self.set_prop_method(prop_method)
 
-        # single_SME_tf = tf.function(self.single_SME)
         if self.rng is None:
             self.rng = tf.random.Generator.from_seed(rng_seed)
+        new_rngs = self.rng.split(num_shots)
 
         psi_shots = []
         ts_list = []
+
+        single_SME_tf = tf.function(self.single_SME)
+
         for num in range(num_shots):
             print(f"Running shot {num}")
-            state_list, ts_list = self.single_SME(self.rng)
+            # state_list, ts_list = self.single_SME(new_rngs[num])
+            state_list, ts_list = single_SME_tf(new_rngs[num])
             psi_shots.append(state_list)
         psi_shots = tf.convert_to_tensor(psi_shots, dtype=tf.complex128)
         ts_list = tf.convert_to_tensor(ts_list, dtype=tf.complex128)
