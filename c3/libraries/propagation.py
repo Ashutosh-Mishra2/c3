@@ -836,6 +836,7 @@ def von_neumann(rho, h, dt, col=None):
 @step_deco
 def sme(rho, h, dt, cols, m_op, rng):
     """
+    TODO -
     Here we should ideally use independent rngs for different measurement
     operators. But now I am only using one for everything.
     Maybe pass multiple rngs in the future
@@ -855,10 +856,10 @@ def sme(rho, h, dt, cols, m_op, rng):
     for c in m_op:
         dW = rng.normal(shape=[1], mean=0, stddev=tf.sqrt(dt_float))[0]
         dW = tf.cast(dW, tf.complex128)
-        del_rho += tf.matmul(c, rho) + tf.matmul(rho, dagger(c)) * dW
+        del_rho += (tf.matmul(c, rho) + tf.matmul(rho, dagger(c))) * dW
         del_rho -= (
-            tf.multiply(tf.linalg.trace(tf.matmul(rho, (c + dagger(c)))), rho) * dW
-        )
+            tf.multiply(tf.linalg.trace(tf.matmul(rho, (c + dagger(c)))), rho)
+        ) * dW
 
     return del_rho
 
@@ -1535,7 +1536,7 @@ def EM_stochastic(func, rho, h, dt, col, m_op, rng):
     Euler-Maruyama method to solve stochastic differential equations.
     """
 
-    rho_new = func(rho, h, dt, col, m_op, rng)
+    rho_new = func(rho, h[0], dt, col, m_op, rng)
 
     return rho_new
 
