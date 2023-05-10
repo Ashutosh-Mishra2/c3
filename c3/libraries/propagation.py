@@ -35,6 +35,7 @@ solver_slicing = {
     "vern7": [9, 9, -3],
     "vern8": [12, 12, -4],
     "vern7_stochastic": [9, 9, -3],
+    "EM_stochastic": [1, 1, 1],
 }
 
 
@@ -1525,6 +1526,17 @@ def vern7_stochastic(func, rho, h, dt, col, m_op, rng):
         + (40977117022675781250 / 178949401077111131341) * k7
         + (2152106665253777 / 106040260335225546) * k10
     )
+    return rho_new
+
+
+@solver_deco
+def EM_stochastic(func, rho, h, dt, col, m_op, rng):
+    """
+    Euler-Maruyama method to solve stochastic differential equations.
+    """
+
+    rho_new = func(rho, h, dt, col, m_op, rng)
+
     return rho_new
 
 
