@@ -518,10 +518,9 @@ def tf_convolve_legacy(sig: tf.Tensor, resp: tf.Tensor):
 
 
 def interpolate_signal(ts, sig, interpolate_res):
+    ts = tf.cast(ts, dtype=tf.float64)
     dt = ts[1] - ts[0]
     if interpolate_res == -1:  # DOPRI5
-        ts = tf.cast(ts, dtype=tf.float64)
-        dt = ts[1] - ts[0]
         ts_interp = tf.concat(
             [
                 ts,
@@ -535,8 +534,6 @@ def interpolate_signal(ts, sig, interpolate_res):
         )
         ts_interp = tf.sort(ts_interp)
     elif interpolate_res == -2:  # tsit5
-        ts = tf.cast(ts, dtype=tf.float64)
-        dt = ts[1] - ts[0]
         ts_interp = tf.concat(
             [
                 ts,
@@ -550,8 +547,6 @@ def interpolate_signal(ts, sig, interpolate_res):
         )
         ts_interp = tf.sort(ts_interp)
     elif interpolate_res == -3:  # vern7
-        ts = tf.cast(ts, dtype=tf.float64)
-        dt = ts[1] - ts[0]
         ts_interp = tf.concat(
             [
                 ts,
@@ -568,8 +563,6 @@ def interpolate_signal(ts, sig, interpolate_res):
         )
         ts_interp = tf.sort(ts_interp)
     elif interpolate_res == -4:  # vern8
-        ts = tf.cast(ts, dtype=tf.float64)
-        dt = ts[1] - ts[0]
         ts_interp = tf.concat(
             [
                 ts,
