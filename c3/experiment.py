@@ -739,13 +739,21 @@ class Experiment:
 
         single_SME_tf = tf.function(self.single_SME)
 
-        for num in range(num_shots):
-            print(f"Running shot {num}")
-            # state_list, ts_list = self.single_SME(new_rngs[num])
-            state_list, ts_list = single_SME_tf(new_rngs[num])
-            psi_shots.append(state_list)
-        psi_shots = tf.convert_to_tensor(psi_shots, dtype=tf.complex128)
-        ts_list = tf.convert_to_tensor(ts_list, dtype=tf.complex128)
+        if num_threads is not None:
+            self.results = []
+            self.sme_multi_thread(new_rngs, num_threads)
+            psi_shots = [i[0] for i in self.results[0]]
+            ts_list = [i[1] for i in self.results[0]]
+            psi_shots = tf.convert_to_tensor(psi_shots, dtype=tf.complex128)
+            ts_list = tf.convert_to_tensor(ts_list, dtype=tf.complex128)
+        else:
+            for num in range(num_shots):
+                print(f"Running shot {num}")
+                # state_list, ts_list = self.single_SME(new_rngs[num])
+                state_list, ts_list = single_SME_tf(new_rngs[num])
+                psi_shots.append(state_list)
+            psi_shots = tf.convert_to_tensor(psi_shots, dtype=tf.complex128)
+            ts_list = tf.convert_to_tensor(ts_list, dtype=tf.complex128)
 
         return {"states": psi_shots, "ts": ts_list}
 
@@ -786,6 +794,13 @@ class Experiment:
             ts_init = result["ts"][-1]
 
         return state_list, ts_list
+
+    def sme_multi_thread(self, rngs, num_threads):
+        single_SME_tf = tf.function(self.single_SME)
+        pool = Pool(processes=num_threads)
+        result = pool.map(single_SME_tf, rngs)
+        self.results.append(result)
+        return result
 
     ######### Deprecated methods ##########
     # -------------------------------------#
