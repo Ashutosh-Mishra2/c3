@@ -20,6 +20,7 @@ from c3.utils.tf_utils import (
     tf_superoper_average_fidelity,
     tf_state_to_dm,
     tf_vec_to_dm,
+    partial_trace_two_systems,
 )
 
 from c3.libraries.propagation import evaluate_sequences
@@ -1182,18 +1183,6 @@ def swap_and_readout_prod(states: tf.Tensor, index, dims, params, n_eval=-1):
     infid = 1 - (swap_fid * iq_fid)
 
     return tf.abs(infid)
-
-
-def partial_trace_two_systems(rho, dims, trace_sys):
-    if trace_sys == 0:
-        rho_ptrace = tf.experimental.numpy.trace(
-            tf.reshape(rho, (dims[0], dims[1], dims[0], dims[1])), axis1=0, axis2=2
-        )
-    else:
-        rho_ptrace = tf.experimental.numpy.trace(
-            tf.reshape(rho, (dims[0], dims[1], dims[0], dims[1])), axis1=1, axis2=3
-        )
-    return rho_ptrace
 
 
 @fid_reg_deco

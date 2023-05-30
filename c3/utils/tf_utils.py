@@ -388,7 +388,9 @@ def tf_superoper_average_fidelity(A, B, lvls=None):
     """A very useful but badly named fidelity measure."""
     if lvls is None:
         lvls = tf.sqrt(tf.cast(tf.shape(B)[0], B.dtype))
-    lambda_super = tf.matmul(tf.linalg.adjoint(tf_project_to_comp(A, lvls, True)), B)
+    lambda_super = tf.matmul(
+        tf.linalg.adjoint(tf_project_to_comp(A, lvls, to_super=True)), B
+    )
     return tf_super_to_fid(lambda_super, lvls)
 
 
@@ -631,3 +633,15 @@ def compute_dissipation_probs(Nsubs, dt, psi, L_dag_L):
 
 def dagger(op):
     return tf.transpose(op, conjugate=True)
+
+
+def partial_trace_two_systems(rho, dims, trace_sys):
+    if trace_sys == 0:
+        rho_ptrace = tf.experimental.numpy.trace(
+            tf.reshape(rho, (dims[0], dims[1], dims[0], dims[1])), axis1=0, axis2=2
+        )
+    else:
+        rho_ptrace = tf.experimental.numpy.trace(
+            tf.reshape(rho, (dims[0], dims[1], dims[0], dims[1])), axis1=1, axis2=3
+        )
+    return rho_ptrace
