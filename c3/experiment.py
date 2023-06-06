@@ -737,7 +737,7 @@ class Experiment:
         psi_shots = []
         ts_list = []
 
-        single_SME_tf = tf.function(self.single_SME)
+        single_SME_tf = tf.function(self.single_SME, jit_compile=True)
 
         if num_threads is not None:
             self.results = []
@@ -796,7 +796,7 @@ class Experiment:
         return state_list, ts_list
 
     def sme_multi_thread(self, rngs, num_threads):
-        single_SME_tf = tf.function(self.single_SME)
+        single_SME_tf = tf.function(self.single_SME, jit_compile=True)
         pool = Pool(processes=num_threads)
         result = pool.map(single_SME_tf, rngs)
         self.results.append(result)
