@@ -37,6 +37,7 @@ from c3.libraries.propagation import unitary_provider, state_provider
 
 from c3.utils.qt_utils import perfect_single_q_parametric_gate
 from multiprocessing.pool import ThreadPool as Pool
+import warnings
 
 
 class Experiment:
@@ -637,7 +638,7 @@ class Experiment:
 
     def compute_states(
         self,
-        solver="rk4",
+        solver="vern7",
         step_function="schrodinger",
         prop_method="ode_solver",
     ):
@@ -825,6 +826,8 @@ class Experiment:
             A List of states for the time evolution.
         """
 
+        warnings.warn("This method has been deprecated.", DeprecationWarning)
+
         model = self.pmap.model
         if model.lindbladian:
             raise Exception(
@@ -924,6 +927,9 @@ class Experiment:
         """
         This function is Deprecated.
         """
+
+        warnings.warn("This method has been deprecated.", DeprecationWarning)
+
         print("Tracing Single stochastic run")
         sequence = self.sequence
         init_state = self.init_state
@@ -971,6 +977,9 @@ class Experiment:
         self,
         plist_tensor: tf.TensorArray,
     ):
+
+        warnings.warn("This method has been deprecated.", DeprecationWarning)
+
         batch_array = tf.TensorArray(
             tf.complex128, size=self.Num_batches, dynamic_size=False, infer_shape=False
         )
@@ -986,6 +995,9 @@ class Experiment:
         return batch_array, ts_list
 
     def sde_multi_thread(self, plist, num_threads):
+
+        warnings.warn("This method has been deprecated.", DeprecationWarning)
+
         single_stochastic_run_tf = tf.function(self.single_stochastic_run)
         pool = Pool(processes=num_threads)
         result = pool.map(single_stochastic_run_tf, tf.unstack(plist))
