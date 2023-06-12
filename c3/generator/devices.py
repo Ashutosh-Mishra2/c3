@@ -1095,7 +1095,7 @@ class DC_Offset(Device):
 class LO(Device):
     """Local oscillator device, generates a constant oscillating signal."""
 
-    def __init__(self, index, **props):
+    def __init__(self, index=None, **props):
         super().__init__(**props)
         self.outputs = props.pop("outputs", 1)
         self.phase_noise = props.pop("phase_noise", 0)
@@ -1176,7 +1176,7 @@ class AWG(Device):
         Filepath to store generated waveforms.
     """
 
-    def __init__(self, index, **props):
+    def __init__(self, index=None, **props):
         self.logdir = props.pop(
             "logdir", os.path.join(tempfile.gettempdir(), "c3logs", "AWG")
         )
