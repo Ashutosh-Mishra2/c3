@@ -39,6 +39,7 @@ class Envelope(C3obj):
         params: Dict[str, Qty] = {},
         shape: Union[Callable, str] = None,
         use_t_before=False,
+        index: Union[int, None] = None,
     ):
         if isinstance(shape, str):
             self.shape = envelopes[shape]
@@ -60,6 +61,7 @@ class Envelope(C3obj):
             comment=comment,
             params=default_params,
         )
+        self.index = index
 
     def write_config(self, filepath: str) -> None:
         """
@@ -248,6 +250,7 @@ class Carrier(C3obj):
         desc: str = " ",
         comment: str = " ",
         params: dict = {},
+        index: Union[int, None] = None,
     ):
         params_default = {
             "freq": Qty(value=0.0, min_val=-1.0, max_val=+1.0, unit="V"),
@@ -260,6 +263,7 @@ class Carrier(C3obj):
             comment=comment,
             params=params_default,
         )
+        self.index = index
 
     def write_config(self, filepath: str) -> None:
         """

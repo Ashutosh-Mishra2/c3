@@ -940,6 +940,38 @@ class Mixer(Device):
 
 
 @dev_reg_deco
+class MultiMixer(Device):
+    """Combines signal from various mixers."""
+
+    def __init__(self, **props):
+        super().__init__(**props)
+
+    def process(
+        self, instr: Instruction, chan: str, inputs: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """Combine signal from AWG and LO.
+
+        Parameters
+        ----------
+        lo_signal : dict
+            Local oscillator signal.
+        awg_signal : dict
+            Waveform generator signal.
+
+        Returns
+        -------
+        dict
+            Mixed signal.
+        """
+        values = tf.zeros_like(inputs[0]["values"])
+        for input_signals in inputs:
+            values += input_signals["values"]
+
+        self.signal = {"values": values, "ts": inputs[0]["ts"]}
+        return self.signal
+
+
+@dev_reg_deco
 class LONoise(Device):
     """Noise applied to the local oscillator"""
 
@@ -1063,12 +1095,13 @@ class DC_Offset(Device):
 class LO(Device):
     """Local oscillator device, generates a constant oscillating signal."""
 
-    def __init__(self, **props):
+    def __init__(self, index, **props):
         super().__init__(**props)
         self.outputs = props.pop("outputs", 1)
         self.phase_noise = props.pop("phase_noise", 0)
         self.freq_noise = props.pop("freq_noise", 0)
         self.amp_noise = props.pop("amp_noise", 0)
+        self.index = index
 
     def process(
         self, instr: Instruction, chan: str, signal: List[Dict[str, Any]]
@@ -1081,7 +1114,9 @@ class LO(Device):
         freq_noise = self.freq_noise
         components = instr.comps
         for comp in components[chan].values():
-            if isinstance(comp, Carrier):
+            if isinstance(comp, Carrier) and (
+                (self.index is None) or (comp.index == self.index)
+            ):
                 cos, sin = [], []
                 omega_lo = comp.params["freq"].get_value()
                 if amp_noise and freq_noise:
@@ -1141,7 +1176,7 @@ class AWG(Device):
         Filepath to store generated waveforms.
     """
 
-    def __init__(self, **props):
+    def __init__(self, index, **props):
         self.logdir = props.pop(
             "logdir", os.path.join(tempfile.gettempdir(), "c3logs", "AWG")
         )
@@ -1152,6 +1187,7 @@ class AWG(Device):
         self.amp_tot_sq = None
         self.process = self.create_IQ
         self.centered_ts = True
+        self.index = index
 
     # TODO create DC function
 
@@ -1186,7 +1222,7 @@ class AWG(Device):
         ts = self.create_ts(instr.t_start, instr.t_end, centered=True)
         self.ts = ts
 
-        signal, norm = instr.get_awg_signal(chan, ts)
+        signal, norm = instr.get_awg_signal(chan, ts, self.index)
 
         self.amp_tot = norm
         self.signal[chan] = {

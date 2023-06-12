@@ -341,7 +341,7 @@ class Instruction:
             self.t_end = t_end
         self.t_end = float(t_end * (1 + buffer))
 
-    def get_awg_signal(self, chan, ts):
+    def get_awg_signal(self, chan, ts, index):
         amp_tot_sq = 0
         signal = tf.zeros_like(ts, tf.complex128)
         self._timings = dict()
@@ -349,7 +349,9 @@ class Instruction:
             comp = self.comps[chan][comp_name]
             t_start, t_end = self.get_timings(chan, comp_name)
             ts_off = ts - t_start
-            if isinstance(comp, Envelope):
+            if isinstance(comp, Envelope) and (
+                (index is None) or index == self.comps[chan][comp_name].index
+            ):
                 amp_re = comp.params["amp"].get_value()
                 amp = tf.complex(amp_re, tf.zeros_like(amp_re))
 
