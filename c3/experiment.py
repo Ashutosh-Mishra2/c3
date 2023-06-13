@@ -734,8 +734,10 @@ class Experiment:
         with tf.init_scope():
             pwc_instr_list = convert_to_pwc_batch(instr, num_batches)
 
+        propagation_tf = tf.function(self.propagation)
+
         for gate in pwc_instr_list:
-            result = self.propagation(
+            result = propagation_tf(
                 model,
                 generator,
                 gate,
