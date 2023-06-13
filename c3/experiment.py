@@ -699,7 +699,6 @@ class Experiment:
         solver="vern7",
         step_function="schrodinger",
         prop_method="ode_solver",
-        add_init=False,
     ):
         """
         Use a state solver to compute the trajectory of the system.
@@ -730,7 +729,9 @@ class Experiment:
 
         sequence = self.opt_gates
         instr = instructions[sequence[0]]
-        pwc_instr_list = convert_to_pwc_batch(instr, num_batches)
+
+        with tf.init_scope():
+            pwc_instr_list = convert_to_pwc_batch(instr, num_batches)
 
         for gate in pwc_instr_list:
             result = self.propagation(

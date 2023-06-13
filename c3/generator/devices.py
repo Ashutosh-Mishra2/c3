@@ -81,7 +81,7 @@ class Device(C3obj):
             End time for this device.
         """
         res = self.resolution
-        self.slice_num = int(np.abs(t_start - t_end) * res)
+        self.slice_num = int(np.round(np.abs(t_start - t_end) * res))
         # return self.slice_num
 
     def create_ts(
