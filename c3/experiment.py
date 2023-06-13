@@ -641,6 +641,7 @@ class Experiment:
         solver="vern7",
         step_function="schrodinger",
         prop_method="ode_solver",
+        add_init=False,
     ):
         """
         Use a state solver to compute the trajectory of the system.
@@ -685,7 +686,12 @@ class Experiment:
                 step_function=step_function,
             )
             state_list = tf.concat([state_list, result["states"]], 0)
-            ts_list = tf.concat([ts_list, tf.add(result["ts"], ts_init)], 0)
+
+            if add_init:
+                ts_list = tf.concat([ts_list, tf.add(result["ts"], ts_init)], 0)
+            else:
+                ts_list = tf.concat([ts_list, result["ts"]], 0)
+
             init_state = result["states"][-1]
             ts_init = result["ts"][-1]
 
