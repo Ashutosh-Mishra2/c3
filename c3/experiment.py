@@ -33,7 +33,7 @@ from c3.utils.tf_utils import (
     dagger,
 )
 
-from c3.utils.utils import convert_to_pwc_batch
+from c3.utils.c3_utils import convert_to_pwc_batch
 
 from c3.libraries.propagation import unitary_provider, state_provider
 
