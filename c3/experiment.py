@@ -730,6 +730,7 @@ class Experiment:
         sequence = self.opt_gates
         instr = instructions[sequence[0]]
 
+        # TODO - Make it tensorflow compatible or figure out a different solution
         with tf.init_scope():
             pwc_instr_list = convert_to_pwc_batch(instr, num_batches)
 
