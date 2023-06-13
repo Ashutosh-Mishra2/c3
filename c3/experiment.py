@@ -33,6 +33,8 @@ from c3.utils.tf_utils import (
     dagger,
 )
 
+from c3.utils.utils import convert_to_pwc_batch
+
 from c3.libraries.propagation import unitary_provider, state_provider
 
 from c3.utils.qt_utils import perfect_single_q_parametric_gate
@@ -641,7 +643,6 @@ class Experiment:
         solver="vern7",
         step_function="schrodinger",
         prop_method="ode_solver",
-        add_init=False,
     ):
         """
         Use a state solver to compute the trajectory of the system.
@@ -686,12 +687,62 @@ class Experiment:
                 step_function=step_function,
             )
             state_list = tf.concat([state_list, result["states"]], 0)
+            ts_list = tf.concat([ts_list, tf.add(result["ts"], ts_init)], 0)
+            init_state = result["states"][-1]
+            ts_init = result["ts"][-1]
 
-            if add_init:
-                ts_list = tf.concat([ts_list, tf.add(result["ts"], ts_init)], 0)
-            else:
-                ts_list = tf.concat([ts_list, result["ts"]], 0)
+        return {"states": state_list, "ts": ts_list}
 
+    def compute_states_batch(
+        self,
+        num_batches,
+        solver="vern7",
+        step_function="schrodinger",
+        prop_method="ode_solver",
+        add_init=False,
+    ):
+        """
+        Use a state solver to compute the trajectory of the system.
+        Here I break the pulse into `num_batches` number of PWC pulses
+        and pass that to the propagation. Right now I have set this
+        to work with ONLY ONE pulse.
+
+        Returns
+        -------
+        List[tf.tensor]
+            List of states of the system from simulation.
+
+        """
+
+        model = self.pmap.model
+        generator = self.pmap.generator
+        instructions = self.pmap.instructions
+
+        self.set_prop_method(prop_method)
+
+        init_state = self.pmap.model.get_init_state()
+        if step_function == "von_neumann":
+            init_state = tf_state_to_dm(init_state)
+        ts_init = tf.constant(0.0, dtype=tf.complex128)
+
+        state_list = tf.expand_dims(init_state, 0)
+        ts_list = [ts_init]
+
+        sequence = self.opt_gates
+        instr = instructions[sequence[0]]
+        pwc_instr_list = convert_to_pwc_batch(instr, num_batches)
+
+        for gate in pwc_instr_list:
+            result = self.propagation(
+                model,
+                generator,
+                gate,
+                init_state,
+                solver=solver,
+                step_function=step_function,
+            )
+            state_list = tf.concat([state_list, result["states"]], 0)
+            ts_list = tf.concat([ts_list, result["ts"]], 0)
             init_state = result["states"][-1]
             ts_init = result["ts"][-1]
 
