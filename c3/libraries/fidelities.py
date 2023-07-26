@@ -1213,12 +1213,12 @@ def readoutswap_trace_prod(states: tf.Tensor, index, dims, params, n_eval=-1):
         states[0][swap_position],
         tf.constant(dims, dtype=tf.int32),
         tf.constant(1, dtype=tf.int32),
-    )
+    )[0, 0]
     ground_pop_e = partial_trace_two_systems(
         states[1][swap_position],
         tf.constant(dims, dtype=tf.int32),
         tf.constant(1, dtype=tf.int32),
-    )
+    )[0, 0]
 
     ground_pop_g = tf.abs(ground_pop_g)
     ground_pop_e = tf.abs(ground_pop_e)
@@ -1265,3 +1265,20 @@ def readout_clear_swap_prod(states: tf.Tensor, index, dims, params, n_eval=-1):
     swap_fid = (overlap_e + overlap_g) / 2
 
     return 1 - (readout_fid * swap_fid)
+
+
+@fid_reg_deco
+def reset_ptrace(states: tf.Tensor, index, dims, n_eval=-1):
+    """
+    Trace out the resonator and calculate the ground state occupation of the qubit.
+    """
+
+    rho_qubit = partial_trace_two_systems(
+        states[-1],
+        tf.constant(dims, dtype=tf.int32),
+        tf.constant(1, dtype=tf.int32),
+    )
+
+    ground_state_pop = tf.abs(rho_qubit[0, 0])
+
+    return 1 - ground_state_pop
