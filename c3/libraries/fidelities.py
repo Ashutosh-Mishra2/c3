@@ -1304,3 +1304,26 @@ def readout_and_clear_ground(states: tf.Tensor, index, dims, params, n_eval=-1):
     clear_fid = 1 - tf.abs(alphas_g[-1]) / tf.reduce_max(tf.abs(alphas_g))
 
     return 1 - (readout_fid * clear_fid)
+
+
+@fid_reg_deco
+def readout_and_clear_ground_2(states: tf.Tensor, index, dims, params, n_eval=-1):
+    print("Calculating fidelity")
+    a_rotated = params["a_rotated"]
+    d_max = params["cutoff_distance"]
+    lindbladian = params["lindbladian"]
+    clear_target_g = params["clear_target_ground"]
+
+    psis_g = states[0]
+    psis_e = states[1]
+
+    alphas_g = calculate_expect_value(psis_g, a_rotated, lindbladian)
+    alphas_e = calculate_expect_value(psis_e, a_rotated, lindbladian)
+
+    distances = tf.abs(alphas_g - alphas_e)
+    max_distance = tf.reduce_max(distances)
+    readout_fid = 1 - tf.exp(-max_distance / d_max)
+
+    clear_fid = calculate_state_overlap(psis_g[-1], clear_target_g)
+
+    return 1 - (readout_fid * clear_fid)
