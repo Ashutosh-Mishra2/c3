@@ -1285,6 +1285,24 @@ def reset_ptrace(states: tf.Tensor, index, dims, n_eval=-1):
 
 
 @fid_reg_deco
+def reset_schrodinger(states: tf.Tensor, index, dims, n_eval=-1):
+    """
+    Trace out the resonator and calculate the ground state occupation of the qubit.
+    """
+    rho_final = tf_state_to_dm(states[-1])
+
+    rho_qubit = partial_trace_two_systems(
+        rho_final,
+        tf.constant(dims, dtype=tf.int32),
+        tf.constant(1, dtype=tf.int32),
+    )
+
+    ground_state_pop = tf.abs(rho_qubit[0, 0])
+
+    return 1 - ground_state_pop
+
+
+@fid_reg_deco
 def readout_and_clear_ground(states: tf.Tensor, index, dims, params, n_eval=-1):
     print("Calculating fidelity")
     a_rotated = params["a_rotated"]
@@ -1308,6 +1326,21 @@ def readout_and_clear_ground(states: tf.Tensor, index, dims, params, n_eval=-1):
 
 @fid_reg_deco
 def readout_and_clear_ground_2(states: tf.Tensor, index, dims, params, n_eval=-1):
+    """
+    Optimize for greater IQ plane distance between the ground and excited state
+    at some time and then at the end clear the resonator population only if the
+    qubit started in the ground state. Here I am using the overlap with the
+    state with empty resonator as cost function as the previous method may
+    depend on the rotating frame of reference.
+
+    Args:
+        states (tf.Tensor): [psis_g, psis_e]
+        index (_type_): -
+        dims (_type_): subsystem dimensions
+        params (_type_): {a_rotated, cutoff_distance, lindbladian, clear_target_ground}
+        n_eval (int, optional): _description_. Defaults to -1.
+
+    """
     print("Calculating fidelity")
     a_rotated = params["a_rotated"]
     d_max = params["cutoff_distance"]
