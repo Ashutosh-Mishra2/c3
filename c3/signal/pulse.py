@@ -78,6 +78,7 @@ class Envelope(C3obj):
             "name": self.name,
             "c3type": self.__class__.__name__,
             "shape": self.shape.__name__,
+            "index": self.index,
             "params": params,
         }
 
