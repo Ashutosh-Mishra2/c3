@@ -266,6 +266,16 @@ class Carrier(C3obj):
         )
         self.index = index
 
+    def asdict(self) -> dict:
+        params = {}
+        for key, item in self.params.items():
+            params[key] = item.asdict()
+        return {
+            "c3type": self.__class__.__name__,
+            "index": self.index,
+            "params": params,
+        }
+
     def write_config(self, filepath: str) -> None:
         """
         Write dictionary to a HJSON file.
