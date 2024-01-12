@@ -57,14 +57,25 @@ class Device(C3obj):
         params = {}
         for key, item in self.params.items():
             params[key] = item.asdict()
-        return {
-            "c3type": self.__class__.__name__,
-            "name": self.name,
-            "inputs": self.inputs,
-            "outputs": self.outputs,
-            "params": params,
-            "resolution": self.resolution,
-        }
+        try:
+            return {
+                "c3type": self.__class__.__name__,
+                "name": self.name,
+                "inputs": self.inputs,
+                "outputs": self.outputs,
+                "params": params,
+                "resolution": self.resolution,
+                "index": self.index,
+            }
+        except:
+            return {
+                "c3type": self.__class__.__name__,
+                "name": self.name,
+                "inputs": self.inputs,
+                "outputs": self.outputs,
+                "params": params,
+                "resolution": self.resolution,
+            }
 
     def __str__(self) -> str:
         return hjson.dumps(self.asdict(), default=hjson_encode)
