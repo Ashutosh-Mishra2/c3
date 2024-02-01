@@ -717,11 +717,11 @@ class Model:
         if tf.executing_eagerly() and not tf.reduce_all(
             tf.math.reduce_variance(ts_list, axis=0) < (1e-5 * (ts[1] - ts[0]))
         ):
-            raise Exception("C3Error:Something with the times happend.")
+            raise Exception("C3Error:Something with the times happened.")
         if tf.executing_eagerly() and not tf.reduce_all(
             tf.math.reduce_variance(ts[1:] - ts[:-1]) < 1e-5 * (ts[1] - ts[0])  # type: ignore
         ):
-            raise Exception("C3Error:Something with the times happend.")
+            raise Exception("C3Error:Something with the times happened.")
 
         ts = tf.cast(ts, dtype=tf.complex128)
 

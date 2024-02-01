@@ -739,6 +739,54 @@ def ode_solver(
 
 
 @state_deco
+def ode_solver_free_evolution(
+    model: Model,
+    gen: Generator,
+    instr: Instruction,
+    init_state,
+    solver,
+    step_function,
+) -> Dict:
+
+    t_start = instr.t_start
+    t_end = instr.t_end
+
+    if model.lindbladian:
+        col = model.collapse_ops
+        step_function = "lindblad"
+    else:
+        col = None
+
+    interpolate_res = solver_slicing[solver][0]
+
+    ### Constructing the Hamiltonian and ts
+    # TO find resolution get LO from generator
+    LO_name = [i for i in gen.devices.keys() if "LO" in i][0]
+    resolution = gen.devices[LO_name].resolution
+    num_steps = tf.cast((t_end - t_start) * resolution, dtype=tf.int64)
+    ts = tf.cast(tf.linspace(t_start, t_end, num_steps), dtype=tf.complex128)
+    dt = 1 / resolution
+
+    # The hamiltonian now is just the drift hamiltonian
+    H0, _ = model.get_Hamiltonians()
+    Hs = tf.repeat(H0[tf.newaxis, :, :], repeats=interpolate_res, axis=0)
+
+    state_list = tf.TensorArray(
+        tf.complex128, size=ts.shape[0], dynamic_size=False, infer_shape=False
+    )
+    state_t = init_state
+    ode_step = step_dict[step_function]
+    solver_function = solver_dict[solver]
+    for index in tf.range(ts.shape[0]):
+        state_t = solver_function(ode_step, state_t, Hs, dt, col=col)
+        state_list = state_list.write(index, state_t)
+
+    states = state_list.stack()
+
+    return {"states": states, "ts": ts}
+
+
+@state_deco
 def ode_solver_final_state(
     model: Model, gen: Generator, instr: Instruction, init_state, solver, step_function
 ) -> Dict:
