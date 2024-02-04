@@ -763,7 +763,7 @@ def ode_solver_free_evolution(
     # TO find resolution get LO from generator
     LO_name = [i for i in gen.devices.keys() if "LO" in i][0]
     resolution = gen.devices[LO_name].resolution
-    num_steps = tf.cast((t_end - t_start) * resolution, dtype=tf.int64)
+    num_steps = tf.constant((t_end - t_start) * resolution, dtype=tf.int64)
     ts = tf.cast(tf.linspace(t_start, t_end, num_steps), dtype=tf.complex128)
     dt = 1 / resolution
 
@@ -784,6 +784,56 @@ def ode_solver_free_evolution(
     states = state_list.stack()
 
     return {"states": states, "ts": ts}
+
+
+@state_deco
+def batched_ode_solver(
+    model: Model,
+    gen: Generator,
+    instr: Instruction,
+    init_state,
+    solver,
+    step_function,
+) -> Dict:
+
+    signal = gen.generate_signals(instr)
+    chan = list(signal.keys())[0]
+    ts = tf.cast(signal[chan]["ts"], dtype=tf.complex128)
+    dt = ts[1] - ts[0]
+
+    if model.lindbladian:
+        col = model.collapse_ops
+        step_function = "lindblad"
+    else:
+        col = None
+
+    interpolate_res = solver_slicing[solver][2]
+
+    state_list = tf.TensorArray(
+        tf.complex128, size=ts.shape[0] - 2, dynamic_size=False, infer_shape=False
+    )
+    state_t = init_state
+    stop = solver_slicing[solver][1]
+    ode_step = step_dict[step_function]
+    solver_function = solver_dict[solver]
+    for index in tf.range(ts.shape[0] - 2):
+        shorter_signal = {}
+        for chans in signal:
+            shorter_signal[chans] = {
+                "ts": signal[chans]["ts"][index : index + 2],
+                "values": signal[chans]["values"][index : index + 2],
+            }
+
+        Hs_dict = model.Hs_of_t(shorter_signal, interpolate_res=interpolate_res)
+        Hs = Hs_dict["Hs"]
+
+        h = tf.slice(Hs, [0, 0, 0], [stop, Hs.shape[1], Hs.shape[2]])
+        state_t = solver_function(ode_step, state_t, h, dt, col=col)
+        state_list = state_list.write(index, state_t)
+
+    states = state_list.stack()
+
+    return {"states": states, "ts": ts[:-2]}
 
 
 @state_deco
