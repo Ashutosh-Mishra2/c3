@@ -67,6 +67,7 @@ class OptimalControl(Optimizer):
         ode_step_function="schrodinger",
         only_final_state=False,
         readout=False,
+        prop_method=None,
     ) -> None:
         if type(algorithm) is str:
             algorithm = algorithms[algorithm]
@@ -97,6 +98,7 @@ class OptimalControl(Optimizer):
             ode_solver=ode_solver,
             ode_step_function=ode_step_function,
             only_final_state=only_final_state,
+            prop_method=prop_method,
         )
 
     def set_goal_function(
@@ -104,10 +106,15 @@ class OptimalControl(Optimizer):
         ode_solver=None,
         ode_step_function="schrodinger",
         only_final_state=False,
+        prop_method=None,
     ):
         self.ode_solver = ode_solver
         self.ode_step_function = ode_step_function
         self.only_final_state = only_final_state
+        self.prop_method = prop_method
+
+        if self.ode_solver is not None and self.prop_method is None:
+            self.prop_method = "batched_ode_solver"  # Setting batched_ode_solver as the default if doing an ode based propagation
 
         if self.ode_solver is not None:
             if self.only_final_state:
@@ -252,7 +259,9 @@ class OptimalControl(Optimizer):
         self.pmap.set_parameters_scaled(current_params)
         dims = self.pmap.model.dims
         result = self.exp.compute_states(
-            solver=self.ode_solver, step_function=self.ode_step_function
+            solver=self.ode_solver,
+            step_function=self.ode_step_function,
+            prop_method=self.prop_method,
         )
         states = result["states"]
 
@@ -284,7 +293,9 @@ class OptimalControl(Optimizer):
         self.pmap.set_parameters_scaled(current_params)
         dims = self.pmap.model.dims
         result = self.exp.compute_final_state(
-            solver=self.ode_solver, step_function=self.ode_step_function
+            solver=self.ode_solver,
+            step_function=self.ode_step_function,
+            prop_method=self.prop_method,
         )
         state = result["states"]
 
@@ -318,13 +329,17 @@ class OptimalControl(Optimizer):
         model = self.pmap.model
         model.set_init_state(self.init_state)
         result_e = self.exp.compute_states(
-            solver=self.ode_solver, step_function=self.ode_step_function
+            solver=self.ode_solver,
+            step_function=self.ode_step_function,
+            prop_method=self.prop_method,
         )
         states_e = result_e["states"]
 
         model.set_init_state(self.ground_state)
         result_g = self.exp.compute_states(
-            solver=self.ode_solver, step_function=self.ode_step_function
+            solver=self.ode_solver,
+            step_function=self.ode_step_function,
+            prop_method=self.prop_method,
         )
         states_g = result_g["states"]
 
