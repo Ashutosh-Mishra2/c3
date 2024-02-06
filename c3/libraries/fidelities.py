@@ -1360,3 +1360,20 @@ def readout_and_clear_ground_2(states: tf.Tensor, index, dims, params, n_eval=-1
     clear_fid = calculate_state_overlap(psis_g[-1], clear_target_g)
 
     return 1 - (readout_fid * clear_fid)
+
+
+@fid_reg_deco
+def remove_leakage(states: tf.Tensor, index, dims, n_eval=-1):
+    """
+    Trace out the resonator and calculate the ground state occupation of the qubit.
+    """
+
+    rho_qubit = partial_trace_two_systems(
+        states[-1],
+        tf.constant(dims, dtype=tf.int32),
+        tf.constant(1, dtype=tf.int32),
+    )
+
+    leakage_pop = tf.abs(rho_qubit[2, 2])
+
+    return leakage_pop
