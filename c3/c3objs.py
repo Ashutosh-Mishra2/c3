@@ -393,6 +393,8 @@ def hjson_encode(z):
         return z.asdict()
     elif isinstance(z, dict) and np.any([not isinstance(k, str) for k in z.keys()]):
         return {str(k): v for k, v in z.items()}
+    elif isinstance(z, np.float128):
+        return float(z)
     return z
 
 
