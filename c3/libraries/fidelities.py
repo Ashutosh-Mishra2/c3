@@ -1374,6 +1374,6 @@ def remove_leakage(states: tf.Tensor, index, dims, n_eval=-1):
         tf.constant(1, dtype=tf.int32),
     )
 
-    leakage_pop = tf.abs(rho_qubit[2, 2])
+    leakage_pop = 1 - tf.abs(rho_qubit[0, 0] + rho_qubit[1, 1])
 
     return leakage_pop
