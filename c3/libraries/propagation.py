@@ -781,9 +781,7 @@ def ode_solver_free_evolution(
         state_t = solver_function(ode_step, state_t, Hs, dt, col=col)
         state_list = state_list.write(index, state_t)
 
-    states = state_list.stack()
-
-    return {"states": states, "ts": ts}
+    return {"states": state_list.stack(), "ts": ts}
 
 
 @state_deco
@@ -831,9 +829,7 @@ def batched_ode_solver(
         state_t = solver_function(ode_step, state_t, h, dt, col=col)
         state_list = state_list.write(index, state_t)
 
-    states = state_list.stack()
-
-    return {"states": states, "ts": ts[:-2]}
+    return {"states": state_list.stack(), "ts": ts[:-2]}
 
 
 @state_deco
