@@ -642,7 +642,7 @@ class Experiment:
         self,
         solver="vern7",
         step_function="schrodinger",
-        prop_method="ode_solver",
+        prop_method="batched_ode_solver",
     ):
         """
         Use a state solver to compute the trajectory of the system.

@@ -73,6 +73,8 @@ class Model:
                 self.init_state = tf_utils.tf_state_to_dm(state)
             elif state.shape[0] == self.tot_dim**2:
                 self.init_state = tf_utils.tf_vec_to_dm(state)
+            else:
+                self.init_state = state
         else:
             self.init_state = state
 
