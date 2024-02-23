@@ -1387,7 +1387,7 @@ def remove_leakage_multi_state(states: tf.Tensor, index, dims, n_eval=-1):
 
     final_states = states[-1]
     infids = tf.TensorArray(
-        tf.complex128, size=final_states.shape[0], dynamic_size=False, infer_shape=False
+        tf.float64, size=final_states.shape[0], dynamic_size=False, infer_shape=False
     )
 
     for i in tf.range(final_states.shape[0]):
