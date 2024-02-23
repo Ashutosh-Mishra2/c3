@@ -1377,3 +1377,25 @@ def remove_leakage(states: tf.Tensor, index, dims, n_eval=-1):
     leakage_pop = 1 - tf.abs(rho_qubit[0, 0] + rho_qubit[1, 1])
 
     return leakage_pop
+
+
+@fid_reg_deco
+def remove_leakage_multi_state(states: tf.Tensor, index, dims, n_eval=-1):
+    """
+    Trace out the resonator and calculate the ground state occupation of the qubit.
+    """
+
+    final_states = states[-1]
+    infids = []
+
+    for state in final_states:
+        rho_qubit = partial_trace_two_systems(
+            state,
+            tf.constant(dims, dtype=tf.int32),
+            tf.constant(1, dtype=tf.int32),
+        )
+
+        leakage_pop = 1 - tf.abs(rho_qubit[0, 0] + rho_qubit[1, 1])
+        infids.append(leakage_pop)
+
+    return tf.reduce_mean(infids)
