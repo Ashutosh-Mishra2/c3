@@ -1386,16 +1386,20 @@ def remove_leakage_multi_state(states: tf.Tensor, index, dims, n_eval=-1):
     """
 
     final_states = states[-1]
-    infids = []
+    infids = tf.TensorArray(
+        tf.complex128, size=final_states.shape[0], dynamic_size=False, infer_shape=False
+    )
 
-    for state in final_states:
+    for i in tf.range(final_states.shape[0]):
         rho_qubit = partial_trace_two_systems(
-            state,
+            final_states[i],
             tf.constant(dims, dtype=tf.int32),
             tf.constant(1, dtype=tf.int32),
         )
 
         leakage_pop = 1 - tf.abs(rho_qubit[0, 0] + rho_qubit[1, 1])
-        infids.append(leakage_pop)
+        infids = infids.write(i, leakage_pop)
+
+    infids = infids.stack()
 
     return tf.reduce_mean(infids)
