@@ -1447,7 +1447,7 @@ def multi_state_infidelity(states: tf.Tensor, index, dims, params, n_eval=-1):
         infids = infids.write(i, weights[i] * infid)
 
     infids = infids.stack()
-    return tf.reduce_mean(infids)
+    return tf.reduce_sum(infids)
 
 
 @fid_reg_deco
