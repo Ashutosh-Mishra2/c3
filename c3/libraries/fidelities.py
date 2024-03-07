@@ -1268,7 +1268,7 @@ def readout_clear_swap_prod(states: tf.Tensor, index, dims, params, n_eval=-1):
 
 
 @fid_reg_deco
-def reset_ptrace(states: tf.Tensor, index, dims, n_eval=-1):
+def reset_ptrace(states: tf.Tensor, index, dims, params=None, n_eval=-1):
     """
     Trace out the resonator and calculate the ground state occupation of the qubit.
     """
@@ -1285,7 +1285,7 @@ def reset_ptrace(states: tf.Tensor, index, dims, n_eval=-1):
 
 
 @fid_reg_deco
-def reset_schrodinger(states: tf.Tensor, index, dims, n_eval=-1):
+def reset_schrodinger(states: tf.Tensor, index, dims, params=None, n_eval=-1):
     """
     Trace out the resonator and calculate the ground state occupation of the qubit.
     """
@@ -1363,7 +1363,7 @@ def readout_and_clear_ground_2(states: tf.Tensor, index, dims, params, n_eval=-1
 
 
 @fid_reg_deco
-def remove_leakage(states: tf.Tensor, index, dims, n_eval=-1):
+def remove_leakage(states: tf.Tensor, index, dims, params=None, n_eval=-1):
     """
     Trace out the resonator and calculate the ground state occupation of the qubit.
     """
@@ -1380,7 +1380,7 @@ def remove_leakage(states: tf.Tensor, index, dims, n_eval=-1):
 
 
 @fid_reg_deco
-def remove_leakage_multi_state(states: tf.Tensor, index, dims, n_eval=-1):
+def remove_leakage_multi_state(states: tf.Tensor, index, dims, params=None, n_eval=-1):
     """
     Trace out the resonator and calculate the ground state occupation of the qubit.
     """
@@ -1402,4 +1402,48 @@ def remove_leakage_multi_state(states: tf.Tensor, index, dims, n_eval=-1):
 
     infids = infids.stack()
 
+    return tf.reduce_mean(infids)
+
+
+@fid_reg_deco
+def multi_state_infidelity(states: tf.Tensor, index, dims, params, n_eval=-1):
+    """
+    Define a cost function that calculates the inifidelity for individual states
+    when starting with multiple initial states.
+
+    Here the states have the shape [times, number of initial states, dim, dim]
+
+    The params dictionary must contain:
+        fid_function: A fidelity function that computes the infidelity for each init state
+        weights: a weighting function that specifies the weights of each of the init state during optimization
+        params_list: List of params dictionary to pe passed onto the fid_function incase it requires extra params
+
+    Args:
+        states (tf.Tensor): Simulated states of the above mentioned shape
+        index (_type_): -
+        dims (_type_): model.dims
+        params (dict): As mentioned above
+        n_eval (int, optional): _description_. Defaults to -1.
+    """
+
+    fid_function = params["fid_function"]
+    weights = params["weights"]
+    params_list = params["params_list"]
+
+    num_init_states = states.shape[1]
+    infids = tf.TensorArray(
+        tf.float64, size=num_init_states, dynamic_size=False, infer_shape=False
+    )
+    for i in tf.range(num_init_states):
+        infid = fid_function(
+            states=states[:, i, ...],
+            index=1,
+            dims=dims,
+            params=params_list[i],
+            n_eval=n_eval,
+        )
+
+        infids = infids.write(i, weights[i] * infid)
+
+    infids = infids.stack()
     return tf.reduce_mean(infids)
