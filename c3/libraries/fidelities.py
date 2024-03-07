@@ -1428,13 +1428,14 @@ def multi_state_infidelity(states: tf.Tensor, index, dims, params, n_eval=-1):
 
     fid_function = params["fid_function"]
     weights = params["weights"]
+    weights = weights / tf.reduce_sum(weights)  # Normalizing the weights
     params_list = params["params_list"]
 
     num_init_states = states.shape[1]
     infids = tf.TensorArray(
         tf.float64, size=num_init_states, dynamic_size=False, infer_shape=False
     )
-    for i in tf.range(num_init_states):
+    for i in range(num_init_states):
         infid = fid_function(
             states=states[:, i, ...],
             index=1,
@@ -1447,3 +1448,17 @@ def multi_state_infidelity(states: tf.Tensor, index, dims, params, n_eval=-1):
 
     infids = infids.stack()
     return tf.reduce_mean(infids)
+
+
+@fid_reg_deco
+def state_transfer_ptrace(states: tf.Tensor, index, dims, params, n_eval=-1):
+    target_index = params["target_index"]
+
+    rho_qubit = partial_trace_two_systems(
+        states[-1],
+        tf.constant(dims, dtype=tf.int32),
+        tf.constant(1, dtype=tf.int32),
+    )
+
+    target_pop = tf.abs(rho_qubit[target_index, target_index])
+    return 1 - target_pop
