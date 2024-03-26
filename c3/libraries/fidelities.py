@@ -1100,6 +1100,10 @@ def readout_and_clear_prod(states: tf.Tensor, index, dims, params, n_eval=-1):
     lindbladian = params["lindbladian"]
     clear_target_g = params["clear_target_ground"]
     clear_target_e = params["clear_target_excited"]
+    clear_weight_g = params["clear_weight_ground"]
+    clear_weight_e = params["clear_weight_excited"]
+    readout_cost = params["readout_cost"]
+    clear_cost = params["readout_cost"]
 
     psis_g = states[0]
     psis_e = states[1]
@@ -1109,12 +1113,22 @@ def readout_and_clear_prod(states: tf.Tensor, index, dims, params, n_eval=-1):
 
     distances = tf.abs(alphas_g - alphas_e)
     max_distance = tf.reduce_max(distances)
-    readout_fid = 1 - tf.exp(-max_distance / d_max)
+    readout_fid = (
+        readout_cost * (1 - tf.exp(-max_distance / d_max)) / (readout_cost + clear_cost)
+    )
 
-    overlap_g = calculate_state_overlap(psis_g[-1], clear_target_g)
-    overlap_e = calculate_state_overlap(psis_e[-1], clear_target_e)
+    overlap_g = (
+        clear_weight_g
+        * calculate_state_overlap(psis_g[-1], clear_target_g)
+        / (clear_weight_g + clear_weight_e)
+    )
+    overlap_e = (
+        clear_weight_e
+        * calculate_state_overlap(psis_e[-1], clear_target_e)
+        / (clear_weight_g + clear_weight_e)
+    )
 
-    clear_fid = (overlap_e + overlap_g) / 2
+    clear_fid = clear_cost * (overlap_e + overlap_g) / (readout_cost + clear_cost)
 
     return 1 - (readout_fid * clear_fid)
 
@@ -1462,3 +1476,98 @@ def state_transfer_ptrace(states: tf.Tensor, index, dims, params, n_eval=-1):
 
     target_pop = tf.abs(rho_qubit[target_index, target_index])
     return 1 - target_pop
+
+
+@fid_reg_deco
+def readout_and_clear_ground_simultaneous(
+    states: tf.Tensor, index, dims, params, n_eval=-1
+):
+    """
+    Here I do readout optimization by using a multi-init
+    and not running the whole simulation seperately for the ground and excited state.
+    For this optimization keep `optimalcontrol.readout` as `False`.
+
+    Args:
+        states (tf.Tensor): [psis_g, psis_e]
+        index (_type_): -
+        dims (_type_): subsystem dimensions
+        params (_type_): {a_rotated, cutoff_distance, lindbladian, clear_target_ground}
+        n_eval (int, optional): _description_. Defaults to -1.
+
+    """
+    a_rotated = params["a_rotated"]
+    d_max = params["cutoff_distance"]
+    lindbladian = params["lindbladian"]
+    clear_target_g = params["clear_target_ground"]
+    clear_target_e = params["clear_target_excited"]
+
+    psis_g = states[:, 0, ...]
+    psis_e = states[:, 1, ...]
+
+    alphas_g = calculate_expect_value(psis_g, a_rotated, lindbladian)
+    alphas_e = calculate_expect_value(psis_e, a_rotated, lindbladian)
+
+    distances = tf.abs(alphas_g - alphas_e)
+    max_distance = tf.reduce_max(distances)
+    readout_fid = 1 - tf.exp(-max_distance / d_max)
+
+    clear_fid_g = calculate_state_overlap(psis_g[-1], clear_target_g)
+    clear_fid_e = calculate_state_overlap(psis_e[-1], clear_target_e)
+
+    clear_fid = (5 * clear_fid_g + clear_fid_e) / 6  # fixing these values for now
+
+    return 1 - (readout_fid * clear_fid)
+
+
+def compute_SNR(states, a_op, dt, eta, kappa):
+    """
+    Compute the signal to noise ratio (SNR) for the readout process
+    """
+    psis_g = states[:, 0, ...]
+    psis_e = states[:, 1, ...]
+
+    alphas_g = calculate_expect_value(psis_g, a_op, lindbladian=True)
+    alphas_e = calculate_expect_value(psis_e, a_op, lindbladian=True)
+
+    diff = tf.abs(alphas_e - alphas_g) ** 2
+    integral = tf.reduce_sum(diff) * dt
+
+    SNR = tf.sqrt(2 * eta * kappa * integral)
+
+    return SNR
+
+
+@fid_reg_deco
+def readout_and_clear_SNR(states: tf.Tensor, index, dims, params, n_eval=-1):
+    """
+    Here I do readout optimization by using a multi-init
+    and not running the whole simulation seperately for the ground and excited state.
+    For this optimization keep `optimalcontrol.readout` as `False`.
+
+    Args:
+        states (tf.Tensor): [psis_g, psis_e]
+        index (_type_): -
+        dims (_type_): subsystem dimensions
+        params (_type_): {a_op, clear_target_ground, clear_target_excited, sim_res, eta, kappa}
+        n_eval (int, optional): _description_. Defaults to -1.
+
+    """
+    a_op = params["a_op"]
+    clear_target_g = params["clear_target_ground"]
+    clear_target_e = params["clear_target_excited"]
+    dt = 1 / params["sim_res"]
+    eta = params["eta"]
+    kappa = params["kappa"]
+
+    SNR = compute_SNR(states, a_op, dt, eta, kappa)
+    readout_fid = 1 / SNR
+
+    psis_g = states[:, 0, ...]
+    psis_e = states[:, 1, ...]
+
+    clear_fid_g = calculate_state_overlap(psis_g[-1], clear_target_g)
+    clear_fid_e = calculate_state_overlap(psis_e[-1], clear_target_e)
+
+    clear_fid = (5 * clear_fid_g + clear_fid_e) / 6  # fixing these values for now
+
+    return 1 - (readout_fid * clear_fid)
