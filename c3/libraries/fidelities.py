@@ -1560,7 +1560,7 @@ def readout_and_clear_SNR(states: tf.Tensor, index, dims, params, n_eval=-1):
     kappa = params["kappa"]
 
     SNR = compute_SNR(states, a_op, dt, eta, kappa)
-    readout_fid = 1 / SNR
+    readout_fid = 1 - tf.exp(-SNR)
 
     psis_g = states[:, 0, ...]
     psis_e = states[:, 1, ...]
