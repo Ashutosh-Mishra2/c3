@@ -154,6 +154,7 @@ class EnvelopeDrag(Envelope):
         params: dict = {},
         shape: types.FunctionType = None,
         use_t_before=False,
+        index: Union[int, None] = None,
     ):
         super().__init__(
             name=name,
@@ -164,6 +165,7 @@ class EnvelopeDrag(Envelope):
             use_t_before=use_t_before,
         )
         self.set_use_t_before(use_t_before)
+        self.index = index
 
     def set_use_t_before(self, use_t_before):
         if use_t_before:

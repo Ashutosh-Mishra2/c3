@@ -276,7 +276,7 @@ class Quantity:
         """Set the value of this quantity as tensorflow. Value needs to be
         within specified min and max."""
         # setting can be numpyish
-        if isinstance(val, ops.EagerTensor) or isinstance(val, ops.Tensor):
+        if tf.is_tensor(val):
             val = tf.cast(val, tf.float64)
         else:
             val = tf.constant(val, tf.float64)
