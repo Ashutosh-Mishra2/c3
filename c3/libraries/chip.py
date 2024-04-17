@@ -218,9 +218,10 @@ class Qubit(PhysicalComponent):
         if "t1" in self.params:
             t1 = self.params["t1"].get_value()
             gamma = (1 / t1) ** 0.5
-            L = gamma * self.collapse_ops["t1"]
-            Ls.append(L)
-            if "temp" in self.params:
+            if "temp" not in self.params:
+                L_t1 = gamma * self.collapse_ops["t1"]
+                Ls.append(L_t1)
+            else:
                 if self.hilbert_dim > 2:
                     freq = self.params["freq"].get_value()
                     anhar = self.params["anhar"].get_value()
@@ -232,8 +233,14 @@ class Qubit(PhysicalComponent):
                 beta = 1 / (self.params["temp"].get_value() * kb)
                 det_bal = tf.exp(-hbar * tf.cast(freq_diff, tf.float64) * beta)
                 det_bal_mat = hskron(tf.linalg.tensor_diag(det_bal), self.index, dims)
-                L = gamma * tf.matmul(self.collapse_ops["temp"], det_bal_mat)
-                Ls.append(L)
+                id_mat = tf.eye(tf.shape(det_bal_mat)[0], dtype=tf.float64)
+
+                L_t1 = gamma * tf.matmul(self.collapse_ops["t1"], det_bal_mat + id_mat)
+                Ls.append(L_t1)
+
+                L_th = gamma * tf.matmul(self.collapse_ops["temp"], det_bal_mat)
+                Ls.append(L_th)
+
         if "t2star" in self.params:
             gamma = (0.5 / self.params["t2star"].get_value()) ** 0.5
             L = gamma * self.collapse_ops["t2star"]
@@ -305,16 +312,23 @@ class Resonator(PhysicalComponent):
         if "t1" in self.params:
             t1 = self.params["t1"].get_value()
             gamma = (1 / t1) ** 0.5
-            L = gamma * self.collapse_ops["t1"]
-            Ls.append(L)
-            if "temp" in self.params:
+            if "temp" not in self.params:
+                L_t1 = gamma * self.collapse_ops["t1"]
+                Ls.append(L_t1)
+            else:
                 freq = self.params["freq"].get_value()
                 freq_diff = np.array([freq for n in range(self.hilbert_dim)])
                 beta = 1 / (self.params["temp"].get_value() * kb)
                 det_bal = tf.exp(-hbar * tf.cast(freq_diff, tf.float64) * beta)
                 det_bal_mat = hskron(tf.linalg.tensor_diag(det_bal), self.index, dims)
-                L = gamma * tf.matmul(self.collapse_ops["temp"], det_bal_mat)
-                Ls.append(L)
+                id_mat = tf.eye(tf.shape(det_bal_mat)[0], dtype=tf.float64)
+
+                L_t1 = gamma * tf.matmul(self.collapse_ops["t1"], det_bal_mat + id_mat)
+                Ls.append(L_t1)
+
+                L_th = gamma * tf.matmul(self.collapse_ops["temp"], det_bal_mat)
+                Ls.append(L_th)
+
         if "t2star" in self.params:
             gamma = (0.5 / self.params["t2star"].get_value()) ** 0.5
             L = gamma * self.collapse_ops["t2star"]
