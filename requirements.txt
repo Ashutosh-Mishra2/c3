@@ -16,3 +16,4 @@ sphinx-autoapi>=1.4.0
 tensorflow>=2.4.1
 tensorflow-estimator>=2.4.0
 tensorflow-probability>=0.12.1
+tf_keras>=2.16.0
