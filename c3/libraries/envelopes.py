@@ -35,6 +35,33 @@ def pwc(t, params):
 
 
 @env_reg_deco
+def pwc_interp(t, params):
+    """Piecewise constant pulse."""
+    
+    t_start = tf.cast(params["t_start"].get_value(), tf.float64)
+    t_end = tf.cast(params["t_end"].get_value(), tf.float64)
+    inphase = tf.cast(params["inphase"].get_value(), tf.float64)
+    quadrature = tf.cast(params["quadrature"].get_value(), tf.float64)
+
+    t_interp = tf.cast(t, dtype=tf.float64)
+    inphase_interp = tfp.math.interp_regular_1d_grid(
+            t_interp,
+            t_start,
+            t_end,
+            inphase,
+    )
+
+    quadrature_interp = tfp.math.interp_regular_1d_grid(
+            t_interp,
+            t_start,
+            t_end,
+            quadrature,
+    )
+
+    return tf.complex(inphase_interp, quadrature_interp)
+
+
+@env_reg_deco
 def pwc_shape(t, params):
     """
     Piecewise constant pulse while defining only a given number of samples, while interpolating linearly between those.
