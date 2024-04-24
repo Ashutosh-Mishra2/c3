@@ -1418,6 +1418,31 @@ def remove_leakage_multi_state(states: tf.Tensor, index, dims, params=None, n_ev
 
     return tf.reduce_mean(infids)
 
+@fid_reg_deco
+def reset_ptrace_multi_state(states: tf.Tensor, index, dims, params=None, n_eval=-1):
+    """
+    Trace out the resonator and calculate the ground state occupation of the qubit.
+    """
+
+    final_states = states[-1]
+    infids = tf.TensorArray(
+        tf.float64, size=final_states.shape[0], dynamic_size=False, infer_shape=False
+    )
+
+    for i in tf.range(final_states.shape[0]):
+        rho_qubit = partial_trace_two_systems(
+            final_states[i],
+            tf.constant(dims, dtype=tf.int32),
+            tf.constant(1, dtype=tf.int32),
+        )
+
+        leakage_pop = 1 - tf.abs(rho_qubit[0, 0])
+        infids = infids.write(i, leakage_pop)
+
+    infids = infids.stack()
+
+    return tf.reduce_mean(infids)
+
 
 @fid_reg_deco
 def multi_state_infidelity(states: tf.Tensor, index, dims, params, n_eval=-1):
