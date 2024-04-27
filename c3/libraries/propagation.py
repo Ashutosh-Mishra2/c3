@@ -905,6 +905,97 @@ def sme_solver(
     return {"states": states, "ts": ts}
 
 
+@state_deco
+def openGRAPESolver(
+    model: Model,
+    gen: Generator,
+    instr: Instruction,
+    init_state,
+    target_state,
+    solver,
+    step_function,
+) -> Dict:
+    """
+    Forward propagate the initial state and backward propagate the target state
+    using ODE solver. This can be used to compute the gradients of the pulse.
+
+    Returns:
+        Dict:
+            "fwd_states": Forward propagated initial state
+            "bwd_states": Backward propagated target state
+            "ts": Times for which the states are saved
+    """
+
+    signal = gen.generate_signals(instr)
+    chan = list(signal.keys())[0]
+    ts = tf.cast(signal[chan]["ts"], dtype=tf.complex128)
+    dt = ts[1] - ts[0]
+
+    if model.lindbladian:
+        col = model.collapse_ops
+        step_function = "lindblad"
+    else:
+        col = None
+
+    interpolate_res = solver_slicing[solver][2]
+    stop = solver_slicing[solver][1]
+    ode_step = step_dict[step_function]
+    solver_function = solver_dict[solver]
+
+    fwd_state_list = tf.TensorArray(
+        tf.complex128, size=ts.shape[0] - 2, dynamic_size=False, infer_shape=False
+    )
+    fwd_state = init_state
+
+    bwd_state_list = tf.TensorArray(
+        tf.complex128, size=ts.shape[0] - 2, dynamic_size=False, infer_shape=False
+    )
+    bwd_state = target_state
+
+    tot_time_steps = ts.shape[0] - 2
+
+    for index in tf.range(tot_time_steps):
+        shorter_signal_fwd = {}
+        shorter_signal_bwd = {}
+        for chans in signal:
+            shorter_signal_fwd[chans] = {
+                "ts": signal[chans]["ts"][index : index + 2],
+                "values": signal[chans]["values"][index : index + 2],
+            }
+            shorter_signal_bwd[chans] = {
+                "ts": signal[chans]["ts"][
+                    tot_time_steps - index - 2 : tot_time_steps - index
+                ],
+                "values": signal[chans]["values"][
+                    tot_time_steps - index - 2 : tot_time_steps - index
+                ],
+            }
+
+        Hs_dict_fwd = model.Hs_of_t(shorter_signal_fwd, interpolate_res=interpolate_res)
+        Hs_fwd = Hs_dict_fwd["Hs"]
+
+        Hs_dict_bwd = model.Hs_of_t(shorter_signal_bwd, interpolate_res=interpolate_res)
+        Hs_bwd = Hs_dict_bwd["Hs"]
+        Hs_bwd = tf.reverse(
+            Hs_bwd, axis=0
+        )  # Reversing the Hs array to propagate backwards
+
+        h_fwd = tf.slice(Hs_fwd, [0, 0, 0], [stop, Hs_fwd.shape[1], Hs_fwd.shape[2]])
+        h_bwd = tf.slice(Hs_bwd, [0, 0, 0], [stop, Hs_bwd.shape[1], Hs_bwd.shape[2]])
+
+        fwd_state = solver_function(ode_step, fwd_state, h_fwd, dt, col=col)
+        bwd_state = solver_function(ode_step, bwd_state, h_bwd, dt, col=col)
+
+        fwd_state_list = fwd_state_list.write(index, fwd_state)
+        bwd_state_list = bwd_state_list.write(index, bwd_state)
+
+    return {
+        "fwd_states": fwd_state_list.stack(),
+        "bwd_states": bwd_state_list.stack(),
+        "ts": ts[:-2],
+    }
+
+
 ########### Step functions ####################
 
 

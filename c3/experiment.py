@@ -693,6 +693,72 @@ class Experiment:
 
         return {"states": state_list, "ts": ts_list}
 
+    def compute_states_and_grad(
+        self,
+        solver="vern7",
+        step_function="schrodinger",
+        prop_method="openGRAPESolver",
+    ):
+        """
+        Compute derivatives of a PWC pulse using GRAPE for an open quantum system.
+        This uses ODE solver to solve the forward and backward propagated states with time,
+        and then they are used to compute the gradients.
+        Ref. arXiv:1609.03170
+
+        Returns
+        -------
+        List[tf.tensor]
+            List of states of the system from simulation.
+
+        """
+
+        model = self.pmap.model
+        generator = self.pmap.generator
+        instructions = self.pmap.instructions
+
+        init_state = self.pmap.model.get_init_state()
+        if step_function == "von_neumann":
+            init_state = tf_state_to_dm(init_state)
+
+        target_state = model.get_target_state()  # TODO - Implement this
+        if step_function == "von_neumann":
+            target_state = tf_state_to_dm(target_state)
+
+        ts_init = tf.constant(0.0, dtype=tf.complex128)
+
+        state_list = tf.expand_dims(init_state, 0)
+        ts_list = [ts_init]
+
+        sequence = self.opt_gates
+
+        self.set_prop_method(
+            "openGRAPESolver"
+        )  # Hard-coding to openGRAPESolver for now
+
+        for gate in sequence:
+            try:
+                instr = instructions[gate]
+            except KeyError:
+                raise Exception(
+                    f"C3:Error: Gate '{gate}' is not defined."
+                    f" Available gates are:\n {list(instructions.keys())}."
+                )
+            result = self.propagation(
+                model,
+                generator,
+                instr,
+                init_state,
+                target_state,
+                solver=solver,
+                step_function=step_function,
+            )
+            state_list = tf.concat([state_list, result["states"]], 0)
+            ts_list = tf.concat([ts_list, tf.add(result["ts"], ts_init)], 0)
+            init_state = result["states"][-1]
+            ts_init = result["ts"][-1]
+
+        return {"states": state_list, "ts": ts_list}
+
     def compute_states_batch(
         self,
         num_batches,
