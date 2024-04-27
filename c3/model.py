@@ -55,6 +55,7 @@ class Model:
         self._hamiltonians = None
         self._dressed_hamiltonians = None
         self.init_state = None
+        self.target_state = None
         if subsystems:
             self.set_components(subsystems, couplings, max_excitations)
         if tasks:
@@ -77,6 +78,17 @@ class Model:
                 self.init_state = state
         else:
             self.init_state = state
+
+    def set_target_state(self, state):
+        if self.lindbladian and state.shape[0] != state.shape[1]:
+            if state.shape[0] == self.tot_dim:
+                self.target_state = tf_utils.tf_state_to_dm(state)
+            elif state.shape[0] == self.tot_dim**2:
+                self.target_state = tf_utils.tf_vec_to_dm(state)
+            else:
+                self.target_state = state
+        else:
+            self.target_state = state
 
     def update_init_state(self):
         if self.init_state is not None:
@@ -117,6 +129,14 @@ class Model:
         else:
             psi_init = self.init_state
         return psi_init
+
+    def get_target_state(self) -> tf.Tensor:
+        """Get the target state"""
+        if self.target_state is None:
+            raise Exception("Target state not set. Please set the target state.")
+        else:
+            target_state = self.target_state
+        return target_state
 
     def __check_drive_connect(self, comp):
         for connect in comp.connected:
