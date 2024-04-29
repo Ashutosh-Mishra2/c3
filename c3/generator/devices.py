@@ -45,6 +45,7 @@ class Device(C3obj):
         params.update(props)
         super().__init__(name, desc, comment, params)
         self.signal = {}
+        self.index = None
 
     def write_config(self, filepath: str) -> None:
         """
@@ -57,7 +58,7 @@ class Device(C3obj):
         params = {}
         for key, item in self.params.items():
             params[key] = item.asdict()
-        try:
+        if self.index is not None:
             return {
                 "c3type": self.__class__.__name__,
                 "name": self.name,
@@ -67,7 +68,7 @@ class Device(C3obj):
                 "resolution": self.resolution,
                 "index": self.index,
             }
-        except:
+        else:
             return {
                 "c3type": self.__class__.__name__,
                 "name": self.name,

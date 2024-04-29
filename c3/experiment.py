@@ -763,21 +763,17 @@ class Experiment:
             ts_init = result["ts"][-1]
 
         # Compute gradients using the backward propagated states
-        grads = []
+        grads = {}
         dt = ts_list[1] - ts_list[0]
 
         ## Get the control Hamiltonian from pmap.opt_map
-        (
-            H_drift,
-            H_control_dict,
-        ) = (
-            model.get_Hamiltonians()
-        )  # TODO - Select only control hamiltonian which has to be optimized
+        # TODO - Select only control hamiltonian which has to be optimized
 
+        H_drift, H_control_dict = model.get_Hamiltonians()
         for chan, H_k in H_control_dict.items():
             com = commutator(H_k, fwd_state_list)
             grad = -1j * dt * tf.linalg.trace(tf.matmul(bwd_state_list, com))
-            grads.append(grad)
+            grads[chan] = grad
 
         return {"states": fwd_state_list, "grads": grads, "ts": ts_list}
 
