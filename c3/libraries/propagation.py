@@ -991,7 +991,7 @@ def openGRAPESolver(
 
     return {
         "fwd_states": fwd_state_list.stack(),
-        "bwd_states": bwd_state_list.stack(),
+        "bwd_states": tf.reverse(bwd_state_list.stack(), axis=0),
         "ts": ts[:-2],
     }
 
