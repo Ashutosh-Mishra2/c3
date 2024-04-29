@@ -732,7 +732,6 @@ class Model:
 
         ts = tf.math.reduce_mean(ts_list, axis=0)
         dt = ts[1] - ts[0]
-        dt = tf.cast(dt, dtype=tf.complex128)
 
         # Only do the safety check outside of graph mode for performance reasons.
         # When using graph mode, the safety check will still be executed ONCE during tracing
@@ -744,8 +743,6 @@ class Model:
             tf.math.reduce_variance(ts[1:] - ts[:-1]) < 1e-5 * (ts[1] - ts[0])  # type: ignore
         ):
             raise Exception("C3Error:Something with the times happened.")
-
-        ts = tf.cast(ts, dtype=tf.complex128)
 
         if not self.h0_drive:
             h0, hctrls = self.get_Hamiltonians()
