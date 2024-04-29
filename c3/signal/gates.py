@@ -367,7 +367,7 @@ class Instruction:
                     amp * env * tf.math.exp(tf.complex(tf.zeros_like(phase), phase))
                 )
 
-        norm = tf.sqrt(tf.cast(amp_tot_sq, tf.float64))
+        norm = tf.sqrt(tf.abs(amp_tot_sq))
 
         inphase = tf.math.real(signal)
         quadrature = tf.math.imag(signal)
