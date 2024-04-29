@@ -940,6 +940,7 @@ def openGRAPESolver(
     interpolate_res = solver_slicing[solver][2]
     stop = solver_slicing[solver][1]
     ode_step = step_dict[step_function]
+    ode_step_rev = step_dict["lindbladReverse"]
     solver_function = solver_dict[solver]
 
     fwd_state_list = tf.TensorArray(
@@ -964,10 +965,10 @@ def openGRAPESolver(
             }
             shorter_signal_bwd[chans] = {
                 "ts": signal[chans]["ts"][
-                    tot_time_steps - index - 2 : tot_time_steps - index
+                    tot_time_steps - index - 1 : tot_time_steps - index + 1
                 ],
                 "values": signal[chans]["values"][
-                    tot_time_steps - index - 2 : tot_time_steps - index
+                    tot_time_steps - index - 1 : tot_time_steps - index + 1
                 ],
             }
 
@@ -977,21 +978,21 @@ def openGRAPESolver(
         Hs_dict_bwd = model.Hs_of_t(shorter_signal_bwd, interpolate_res=interpolate_res)
         Hs_bwd = Hs_dict_bwd["Hs"]
         Hs_bwd = tf.reverse(
-            Hs_bwd, axis=0
+            Hs_bwd, axis=[0]
         )  # Reversing the Hs array to propagate backwards
 
         h_fwd = tf.slice(Hs_fwd, [0, 0, 0], [stop, Hs_fwd.shape[1], Hs_fwd.shape[2]])
         h_bwd = tf.slice(Hs_bwd, [0, 0, 0], [stop, Hs_bwd.shape[1], Hs_bwd.shape[2]])
 
         fwd_state = solver_function(ode_step, fwd_state, h_fwd, dt, col=col)
-        bwd_state = solver_function(ode_step, bwd_state, h_bwd, dt, col=col)
+        bwd_state = solver_function(ode_step_rev, bwd_state, h_bwd, dt, col=col)
 
         fwd_state_list = fwd_state_list.write(index, fwd_state)
         bwd_state_list = bwd_state_list.write(index, bwd_state)
 
     return {
         "fwd_states": fwd_state_list.stack(),
-        "bwd_states": tf.reverse(bwd_state_list.stack(), axis=0),
+        "bwd_states": tf.reverse(bwd_state_list.stack(), axis=[0]),
         "ts": ts[:-2],
     }
 
@@ -1005,6 +1006,15 @@ def lindblad(rho, h, dt, cols):
     for col in cols:
         del_rho += tf.matmul(tf.matmul(col, rho), dagger(col))
         del_rho -= 0.5 * anticommutator(tf.matmul(dagger(col), col), rho)
+    return del_rho * dt
+
+
+@step_deco
+def lindbladReverse(rho, h, dt, cols):
+    del_rho = -1j * commutator(h, rho)
+    for col in cols:
+        del_rho -= tf.matmul(tf.matmul(dagger(col), rho), col)
+        del_rho += 0.5 * anticommutator(tf.matmul(dagger(col), col), rho)
     return del_rho * dt
 
 

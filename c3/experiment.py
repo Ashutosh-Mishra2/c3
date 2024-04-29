@@ -31,6 +31,7 @@ from c3.utils.tf_utils import (
     _tf_matmul_n_odd,
     compute_dissipation_probs,
     dagger,
+    commutator,
 )
 
 from c3.utils.c3_utils import convert_to_pwc_batch
@@ -697,7 +698,6 @@ class Experiment:
         self,
         solver="vern7",
         step_function="schrodinger",
-        prop_method="openGRAPESolver",
     ):
         """
         Compute derivatives of a PWC pulse using GRAPE for an open quantum system.
@@ -720,16 +720,19 @@ class Experiment:
         if step_function == "von_neumann":
             init_state = tf_state_to_dm(init_state)
 
-        target_state = model.get_target_state()  # TODO - Implement this
+        target_state = model.get_target_state()
         if step_function == "von_neumann":
             target_state = tf_state_to_dm(target_state)
 
+        sequence = self.opt_gates
+        if len(sequence) > 1:
+            raise NotImplementedError("Works only for one gate in the sequence now.")
+
         ts_init = tf.constant(0.0, dtype=tf.complex128)
 
-        state_list = tf.expand_dims(init_state, 0)
+        fwd_state_list = tf.expand_dims(init_state, 0)
+        bwd_state_list = tf.expand_dims(target_state, 0)
         ts_list = [ts_init]
-
-        sequence = self.opt_gates
 
         self.set_prop_method(
             "openGRAPESolver"
@@ -752,12 +755,31 @@ class Experiment:
                 solver=solver,
                 step_function=step_function,
             )
-            state_list = tf.concat([state_list, result["states"]], 0)
+            fwd_state_list = tf.concat([fwd_state_list, result["fwd_states"]], 0)
+            bwd_state_list = tf.concat([bwd_state_list, result["bwd_states"]], 0)
+
             ts_list = tf.concat([ts_list, tf.add(result["ts"], ts_init)], 0)
-            init_state = result["states"][-1]
+            init_state = result["fwd_states"][-1]
             ts_init = result["ts"][-1]
 
-        return {"states": state_list, "ts": ts_list}
+        # Compute gradients using the backward propagated states
+        grads = []
+        dt = ts_list[1] - ts_list[0]
+
+        ## Get the control Hamiltonian from pmap.opt_map
+        (
+            H_drift,
+            H_control_dict,
+        ) = (
+            model.get_Hamiltonians()
+        )  # TODO - Select only control hamiltonian which has to be optimized
+
+        for chan, H_k in H_control_dict.items():
+            com = commutator(H_k, fwd_state_list)
+            grad = -1j * dt * tf.linalg.trace(tf.matmul(bwd_state_list, com))
+            grads.append(grad)
+
+        return {"states": fwd_state_list, "grads": grads, "ts": ts_list}
 
     def compute_states_batch(
         self,
