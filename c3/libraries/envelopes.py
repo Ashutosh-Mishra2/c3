@@ -37,7 +37,7 @@ def pwc(t, params):
 @env_reg_deco
 def pwc_interp(t, params):
     """Piecewise constant pulse."""
-    
+
     t_start = tf.cast(params["t_start"].get_value(), tf.float64)
     t_end = tf.cast(params["t_end"].get_value(), tf.float64)
     inphase = tf.cast(params["inphase"].get_value(), tf.float64)
@@ -45,17 +45,17 @@ def pwc_interp(t, params):
 
     t_interp = tf.cast(t, dtype=tf.float64)
     inphase_interp = tfp.math.interp_regular_1d_grid(
-            t_interp,
-            t_start,
-            t_end,
-            inphase,
+        t_interp,
+        t_start,
+        t_end,
+        inphase,
     )
 
     quadrature_interp = tfp.math.interp_regular_1d_grid(
-            t_interp,
-            t_start,
-            t_end,
-            quadrature,
+        t_interp,
+        t_start,
+        t_end,
+        quadrature,
     )
 
     return tf.complex(inphase_interp, quadrature_interp)
@@ -81,12 +81,12 @@ def pwc_shape(t, params):
 
     t_interp = tf.cast(t, dtype=tf.float64)
     shape = tfp.math.interp_regular_1d_grid(
-            t_interp,
-            t_bin_start,
-            t_bin_end,
-            inphase,
+        t_interp,
+        t_bin_start,
+        t_bin_end,
+        inphase,
     )
-    shape = tf.reshape(shape,[tf.shape(t)[0]])
+    shape = tf.reshape(shape, [tf.shape(t)[0]])
 
     return tf_complexify(shape)
 
@@ -299,6 +299,41 @@ def flattop(t, params):
         / 2
     )
     return tf_complexify(shape)
+
+
+@env_reg_deco
+def flattop_DRAG(t, params):
+    """Flattop gaussian with width of length risefall, modelled by error functions.
+    With DRAG corrections to the pulse.
+
+    Parameters
+    ----------
+    params : dict
+        t_up : float
+            Center of the ramp up.
+        t_down : float
+            Center of the ramp down.
+        risefall : float
+            Length of the ramps.
+
+    """
+    t_up = tf.cast(params["t_up"].get_value(), tf.float64)
+    t_down = tf.cast(params["t_down"].get_value(), tf.float64)
+    risefall = tf.cast(params["risefall"].get_value(), tf.float64)
+
+    delta = tf.cast(params["delta"].get_value(), tf.float64)
+
+    rampUp = 1 + tf.math.erf((t - t_up) / risefall)
+    rampDown = 1 + tf.math.erf((-t + t_down) / risefall)
+
+    env = rampUp * rampDown / 4
+
+    envDrag = tf.math.exp(
+        -(((t - t_up) / risefall) ** 2)
+    ) * rampDown - rampUp * tf.math.exp(-(((-t + t_down) / risefall) ** 2))
+    envDrag *= 1 / (2 * risefall * tf.cast(tf.math.sqrt(np.pi), dtype=tf.float64))
+
+    return tf.complex(env, -envDrag / delta)
 
 
 @env_reg_deco
