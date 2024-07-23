@@ -174,15 +174,14 @@ class EnvelopeDrag(Envelope):
             self.base_env = super()._get_shape_values_just
 
     def get_shape_values(self, ts, t_final=1):
-        dt = ts[1] - ts[0]
         with tf.GradientTape() as t:
             t.watch(ts)
             env = tf.math.real(self.base_env(ts, t_final))
-        denv = (
-            t.gradient(env, ts, unconnected_gradients=tf.UnconnectedGradients.ZERO) * dt
+        denv = t.gradient(
+            env, ts, unconnected_gradients=tf.UnconnectedGradients.ZERO
         )  # Derivative W.R.T. to bins
         delta = self.params["delta"].get_value()
-        return tf.complex(env, -denv * delta)
+        return tf.complex(env, -denv / delta)
 
 
 @comp_reg_deco
