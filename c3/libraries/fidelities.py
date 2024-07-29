@@ -1418,6 +1418,7 @@ def remove_leakage_multi_state(states: tf.Tensor, index, dims, params=None, n_ev
 
     return tf.reduce_mean(infids)
 
+
 @fid_reg_deco
 def reset_ptrace_multi_state(states: tf.Tensor, index, dims, params=None, n_eval=-1):
     """
@@ -1560,6 +1561,48 @@ def compute_SNR(states, a_op, dt, eta, kappa):
     SNR = tf.sqrt(2 * eta * kappa * integral)
 
     return SNR
+
+
+@fid_reg_deco
+def readout_and_clear_weighted(states: tf.Tensor, index, dims, params, n_eval=-1):
+    """
+    Here I do readout optimization by using a multi-init
+    and not running the whole simulation seperately for the ground and excited state.
+    For this optimization keep `optimalcontrol.readout` as `False`.
+
+    Args:
+        states (tf.Tensor): [psis_g, psis_e]
+        index (_type_): -
+        dims (_type_): subsystem dimensions
+        params (_type_): {a_op, clear_target_ground, clear_target_excited, sim_res, eta, kappa}
+        n_eval (int, optional): _description_. Defaults to -1.
+
+    """
+    a_op = params["a_op"]
+    clear_target_g = params["clear_target_ground"]
+    clear_target_e = params["clear_target_excited"]
+    d_max = params["d_max"]
+    lindbladian = params["lindbladian"]
+    g_weight = params["clear_weight_ground"]
+    e_weight = params["clear_weight_excited"]
+
+    psis_g = states[:, 0, ...]
+    psis_e = states[:, 1, ...]
+
+    alphas_g = calculate_expect_value(psis_g, a_op, lindbladian)
+    alphas_e = calculate_expect_value(psis_e, a_op, lindbladian)
+
+    distances = tf.abs(alphas_g - alphas_e)
+    max_distance = tf.reduce_max(distances)
+    readout_fid = 1 - tf.exp(-max_distance / d_max)
+
+    clear_fid_g = calculate_state_overlap(psis_g[-1], clear_target_g)
+    clear_fid_e = calculate_state_overlap(psis_e[-1], clear_target_e)
+
+    clear_fid = (g_weight * clear_fid_g + e_weight * clear_fid_e) / (
+        g_weight + e_weight
+    )
+    return 1 - (readout_fid * clear_fid)
 
 
 @fid_reg_deco
