@@ -844,6 +844,8 @@ class Experiment:
         step_function="sme",
         prop_method="sme_solver",
         rng_seed=12345,
+        write_every=100,
+        filename=None,
     ):
         """
         Simulate multiple shots of stochastic master equation.
@@ -880,18 +882,24 @@ class Experiment:
             self.rng = tf.random.Generator.from_seed(rng_seed)
         new_rngs = self.rng.split(num_shots)
 
+        self.write_every = write_every
+
         psi_shots = []
         ts_list = []
 
         single_SME_tf = tf.function(self.single_SME, jit_compile=True)
 
         if num_threads is not None:
-            self.results = []
-            self.sme_multi_thread(new_rngs, num_threads)
-            psi_shots = [i[0] for i in self.results[0]]
-            ts_list = [i[1] for i in self.results[0]]
-            psi_shots = tf.convert_to_tensor(psi_shots, dtype=tf.complex128)
-            ts_list = tf.convert_to_tensor(ts_list, dtype=tf.complex128)
+            if filename is not None:
+                self.sme_multi_thread_write_to_file(new_rngs, num_threads, filename)
+                return None
+            else:
+                self.results = []
+                self.sme_multi_thread(new_rngs, num_threads)
+                psi_shots = [i[0] for i in self.results[0]]
+                ts_list = [i[1] for i in self.results[0]]
+                psi_shots = tf.convert_to_tensor(psi_shots, dtype=tf.complex128)
+                ts_list = tf.convert_to_tensor(ts_list, dtype=tf.complex128)
         else:
             for num in range(num_shots):
                 print(f"Running shot {num}")
@@ -933,6 +941,7 @@ class Experiment:
                 rng=rng,
                 solver=self.solver,
                 step_function=self.step_function,
+                write_every=self.write_every,
             )
             state_list = tf.concat([state_list, result["states"]], 0)
             ts_list = tf.concat([ts_list, tf.add(result["ts"], ts_init)], 0)
@@ -942,11 +951,19 @@ class Experiment:
         return state_list, ts_list
 
     def sme_multi_thread(self, rngs, num_threads):
-        single_SME_tf = tf.function(self.single_SME, jit_compile=True)
+        single_SME_tf = tf.function(self.single_SME, jit_compile=False)
         pool = Pool(processes=num_threads)
         result = pool.map(single_SME_tf, rngs)
         self.results.append(result)
         return result
+
+    def sme_multi_thread_write_to_file(self, rngs, num_threads, filename):
+        single_SME_tf = tf.function(self.single_SME, jit_compile=False)
+        pool = Pool(processes=num_threads)
+        with open(filename, "wb") as f:
+            for result in pool.imap_unordered(single_SME_tf, rngs):
+                print("Writing to file")
+                np.save(f, result[0])
 
     ######### Deprecated methods ##########
     # -------------------------------------#

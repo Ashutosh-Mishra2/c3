@@ -792,6 +792,7 @@ def batched_ode_solver(
     init_state,
     solver,
     step_function,
+    write_every=100,
 ) -> Dict:
 
     signal = gen.generate_signals(instr)
@@ -827,7 +828,8 @@ def batched_ode_solver(
 
         h = tf.slice(Hs, [0, 0, 0], [stop, Hs.shape[1], Hs.shape[2]])
         state_t = solver_function(ode_step, state_t, h, dt, col=col)
-        state_list = state_list.write(index, state_t)
+        if index % write_every == 0:
+            state_list = state_list.write(index, state_t)
 
     return {"states": state_list.stack(), "ts": ts[:-2]}
 
@@ -903,6 +905,60 @@ def sme_solver(
     states = state_list.stack()
 
     return {"states": states, "ts": ts}
+
+
+@state_deco
+def batched_sme_solver(
+    model: Model,
+    gen: Generator,
+    instr: Instruction,
+    init_state,
+    solver,
+    step_function,
+    rng,
+    write_every,
+) -> Dict:
+
+    signal = gen.generate_signals(instr)
+    chan = list(signal.keys())[0]
+    ts = tf.cast(signal[chan]["ts"], dtype=tf.complex128)
+    dt = ts[1] - ts[0]
+
+    col = model.collapse_ops
+    m_op = model.measurement_op
+
+    interpolate_res = solver_slicing[solver][2]
+
+    state_list = tf.TensorArray(
+        tf.complex128,
+        size=int(ts.shape[0] / write_every) + 1,
+        dynamic_size=False,
+        infer_shape=False,
+    )
+    state_t = init_state
+    stop = solver_slicing[solver][1]
+    ode_step = step_dict[step_function]
+    solver_function = solver_dict[solver]
+
+    for index in tf.range(ts.shape[0] - 2):
+        # print("SME_solver tracing")
+
+        shorter_signal = {}
+        for chans in signal:
+            shorter_signal[chans] = {
+                "ts": signal[chans]["ts"][index : index + 2],
+                "values": signal[chans]["values"][index : index + 2],
+            }
+
+        Hs_dict = model.Hs_of_t(shorter_signal, interpolate_res=interpolate_res)
+        Hs = Hs_dict["Hs"]
+
+        h = tf.slice(Hs, [0, 0, 0], [stop, Hs.shape[1], Hs.shape[2]])
+        state_t = solver_function(ode_step, state_t, h, dt, col=col, m_op=m_op, rng=rng)
+        if index % write_every == 0:
+            state_list = state_list.write(int(index / write_every), state_t)
+
+    return {"states": state_list.stack()[:-1], "ts": ts[:-2][::write_every]}
 
 
 @state_deco
@@ -1047,9 +1103,11 @@ def sme(rho, h, dt, cols, m_op, rng):
 
     del_rho = del_rho * dt
 
-    dt_float = tf.cast(dt, tf.float32)
+    dt_float = tf.math.real(dt)
     for c in m_op:
-        dW = rng.normal(shape=[1], mean=0, stddev=tf.sqrt(dt_float))[0]
+        dW = rng.normal(
+            shape=[1], mean=0.0, stddev=tf.math.sqrt(dt_float), dtype=tf.float64
+        )[0]
         dW = tf.cast(dW, tf.complex128)
         del_rho += (tf.matmul(c, rho) + tf.matmul(rho, dagger(c))) * dW
         del_rho -= (
